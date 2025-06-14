@@ -487,7 +487,7 @@
                 margin-bottom: 25px; /* More margin */
                 padding: 20px; /* More padding */
                 border: 1px solid yellow; /* Border color */
-                border-radius: 8px; /* More rounded */
+                border-radius: 8px;
                 background-color: white; /* Background color */
             }
             #studentPrintOptions label {
@@ -787,7 +787,7 @@
 <body>
 <div id="loginContainer">
 <div class="login-watermark">
-<img alt="Logo Escola Academia Primeiros Passos" src="senac_logo.png"/>
+<img alt="Logo Escola Academia Primeiros Passos" src="https://placehold.co/150x150/F5DEB3/A52A2A?text=APP"/>
 </div>
 <h1 class="senac-title">Escola Academia Primeiros Passos</h1>
 <p style="color: #8B4513; margin-top: -20px; margin-bottom: 20px; font-size: 1.2em;">Boletim Escolar - APP</p> <input id="username" placeholder="Usuário" type="text"/>
@@ -1244,7 +1244,29 @@
 <button class="button" onclick="updateUser()" style="width: auto; display: inline-block; margin-top:20px;" type="button">Atualizar Usuário</button>
 </div>
 </div>
-<script>
+<script type="module">
+    // Firebase Imports
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Initialize Firebase
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    // Global variables for Firebase data and current user
+    let students = [];
+    let users = [];
+    let currentUser = null;
+    let authReady = false; // Flag to indicate if authentication state has been determined
+
+    const studentsCollectionRef = collection(db, `artifacts/${appId}/public/data/students`);
+    const usersCollectionRef = collection(db, `artifacts/${appId}/public/data/users`);
+
     // Generate an array of numbers from 0 to 10 with increments of 0.25
     const gradeOptions = [];
     for (let i = 0; i <= 10; i += 0.25) {
@@ -1264,11 +1286,6 @@
             selectElement.appendChild(option);
         });
     }
-
-    // --- DATA SIMULATION IN MEMORY (Replace with Local Storage or Backend) ---
-    // Initial data (will be replaced by localStorage if data exists)
-     let students = [];
-     let users = [{ username: 'administrador', password: 'admsenac2024', role: 'admin', name: 'Administrador', assignments: [] }]; // Default admin user
 
     const classInfoMap = {
         // Educação Infantil
@@ -1342,108 +1359,31 @@
 
     function getClassInfo(className) { return classInfoMap[className] || { unit: 'Desconhecido', course: 'Desconhecido' }; }
 
-    // --- Local Storage Functions ---
-    function saveData() {
-        try {
-            localStorage.setItem('students', JSON.stringify(students));
-            localStorage.setItem('users', JSON.stringify(users));
-             // console.log('Data saved to localStorage');
-        } catch (e) {
-            console.error('Error saving data to localStorage:', e);
-            alert('Não foi possível salvar os dados no navegador. Por favor, verifique se o armazenamento local está ativado.');
-        }
-    }
-
-    function loadData() {
-        try {
-            const savedStudents = localStorage.getItem('students');
-            const savedUsers = localStorage.getItem('users');
-            if (savedStudents) {
-                students = JSON.parse(savedStudents);
-                // Ensure students have a unique ID if they don't already (for backward compatibility)
-                if (students.length > 0) {
-                     students = students.map((s, index) => {
-                         if (!s.id) s.id = 's' + (index + 1);
-                         if (!s.professorNotes) s.professorNotes = []; // NEW: Ensure professorNotes array exists
-                         // NEW: Ensure existing students have 'matricula' for backward compatibility
-                         if (!s.matricula) s.matricula = ''; // Default to empty string
-                         return s;
-                     });
-                }
-                 // console.log('Students data loaded from localStorage');
-            } else {
-                 // Populate with initial student data if no data in localStorage
-                 populateInitialStudents();
-                 // console.log('No student data found in localStorage, using initial data.');
-            }
-
-            if (savedUsers) {
-                users = JSON.parse(savedUsers);
-                 // Ensure the default admin user exists if loading from a state where it might be missing
-                 if (!users.find(user => user.username === 'administrador')) {
-                     users.unshift({ username: 'administrador', password: 'admsenac2024', role: 'admin', name: 'Administrador', assignments: [] });
-                 }
-                 // NEW: Ensure all users have an assignments array if missing
-                 users = users.map(user => {
-                     if (!Array.isArray(user.assignments)) user.assignments = [];
-                     return user;
-                 });
-                 // console.log('Users data loaded from localStorage');
-            } else {
-                 // Add initial professor and coordinator data if no user data in localStorage
-                 users = [{ username: 'administrador', password: 'admsenac2024', role: 'admin', name: 'Administrador', assignments: [] }];
-                 users.push({ username: 'profmath', password: 'passprof', role: 'professor', name: 'Prof. Matemática', assignments: [{ discipline: 'Matemática', classes: ['1 ANO A Fundamental 1', '1 ANO B Fundamental 1', '1 ANO C Fundamental 1', '2 ANO A Fundamental 1', '2 ANO B Fundamental 1', '3 ANO A Fundamental 1'] }, { discipline: 'Física', classes: ['2 ANO A Fundamental 1', '2 ANO B Fundamental 1'] }] });
-                 users.push({ username: 'coord', password: 'passcoord', role: 'coordenador', name: 'Coordenador Geral', assignments: [] });
-                  // console.log('No user data found in localStorage, using initial data.');
-            }
-        } catch (e) {
-            console.error('Error loading data from localStorage:', e);
-            alert('Não foi possível carregar os dados do navegador. Os dados iniciais serão usados.');
-             // Fallback to initial data if loading fails
-            students = [];
-            users = [{ username: 'administrador', password: 'admsenac2024', role: 'admin', name: 'Administrador', assignments: [] }];
-             populateInitialStudents();
-             users.push({ username: 'profmath', password: 'passprof', role: 'professor', name: 'Prof. Matemática', assignments: [{ discipline: 'Matemática', classes: ['1 ANO A Fundamental 1', '1 ANO B Fundamental 1', '1 ANO C Fundamental 1', '2 ANO A Fundamental 1', '2 ANO B Fundamental 1', '3 ANO A Fundamental 1'] }, { discipline: 'Física', classes: ['2 ANO A Fundamental 1', '2 ANO B Fundamental 1'] }] });
-             users.push({ username: 'coord', password: 'passcoord', role: 'coordenador', name: 'Coordenador Geral', assignments: [] });
-        }
-    }
-
-     // Helper to populate initial student data (only used if no data in localStorage)
-     function populateInitialStudents() {
-        students = []; // Clear existing students if any
-         // Example of populating initial students if needed, based on the new class structure.
-         // For now, leaving it empty as previous students were specific to 'Médio Técnico'.
-         // If you want to pre-populate with students from new classes, you can add similar logic here.
-     }
-
-
-    let currentUser = null;
     const loginContainer = document.getElementById('loginContainer');
     const appContainer = document.getElementById('appContainer');
     const studentManagementSection = document.getElementById('studentManagementSection');
     const manageUsersSection = document.getElementById('manageUsersSection');
     const professorSection = document.getElementById('professorSection');
-    const professorNotesSection = document.getElementById('professorNotesSection'); // NEW
+    const professorNotesSection = document.getElementById('professorNotesSection');
     const userManagementSection = document.getElementById('userManagementSection');
     const sidebarHr = document.getElementById('sidebarHr');
     const professorWelcome = document.getElementById('professorWelcome');
     const studentBulletinSection = document.getElementById('studentBulletinSection');
-    const studentPrintOptions = document.getElementById('studentPrintOptions'); // Container for student's print options
-    const professorAgendaButton = document.getElementById('professorAgendaButton'); // NEW
-
+    const studentPrintOptions = document.getElementById('studentPrintOptions');
+    const professorAgendaButton = document.getElementById('professorAgendaButton');
 
     function showSection(sectionToShow) {
         studentManagementSection.classList.add('hidden');
         manageUsersSection.classList.add('hidden');
         professorSection.classList.add('hidden');
         studentBulletinSection.classList.add('hidden');
-        professorNotesSection.classList.add('hidden'); // NEW
+        professorNotesSection.classList.add('hidden');
         sectionToShow.classList.remove('hidden');
     }
 
-    function showStudentManagementSection() {
+    async function showStudentManagementSection() {
         showSection(studentManagementSection);
-        renderStudentTable(students);
+        renderStudentTable(students); // Will be updated by onSnapshot
         populateClassSelect(document.getElementById('printClassSelect'));
         populateStudentPrintSelect();
         if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'coordenador')) {
@@ -1451,11 +1391,11 @@
             document.getElementById('addDisciplineSection').classList.remove('hidden');
             populateClassSelect(document.getElementById('disciplineClassSelect'));
             populateStudentSelectForDiscipline();
-            populateDisciplineSelect(document.getElementById('disciplineSelect')); // Populate discipline select
-            populateGradeSelect('test1'); // Populate grade selects
+            populateDisciplineSelect(document.getElementById('disciplineSelect'));
+            populateGradeSelect('test1');
             populateGradeSelect('test2');
             populateGradeSelect('evaluation1');
-            professorAgendaButton.classList.add('hidden'); // NEW: Hide agenda button for admin/coordinator
+            professorAgendaButton.classList.add('hidden');
         } else {
             document.getElementById('addStudentSection').classList.add('hidden');
             document.getElementById('addDisciplineSection').classList.add('hidden');
@@ -1464,66 +1404,58 @@
 
     function showManageUsersSection() {
         showSection(manageUsersSection);
-        renderUsersTable(users);
-        professorAgendaButton.classList.add('hidden'); // NEW
+        renderUsersTable(users); // Will be updated by onSnapshot
+        professorAgendaButton.classList.add('hidden');
     }
 
     function showProfessorSection(user) {
         showSection(professorSection);
-        professorWelcome.textContent = 'Olá, ' + user.name + '!';
+        professorWelcome.textContent = `Olá, ${user.name}!`;
         populateProfessorSelects(user);
         document.querySelector('#professorStudentTable tbody').innerHTML = '';
         document.getElementById('professorNoStudentsMessage').classList.remove('hidden');
-         document.querySelector('#professorStudentTable thead').classList.add('hidden'); // Hide table header initially
-        professorAgendaButton.classList.remove('hidden'); // NEW: Show agenda button for professor
+        document.querySelector('#professorStudentTable thead').classList.add('hidden');
+        professorAgendaButton.classList.remove('hidden');
     }
 
-    // NEW: Function to show Professor Notes Section
     function showProfessorNotesSection() {
         showSection(professorNotesSection);
-        professorAgendaButton.classList.remove('hidden'); // Keep agenda button visible
+        professorAgendaButton.classList.remove('hidden');
         populateProfessorNotesControls();
-        document.getElementById('professorNoteContent').value = ''; // Clear textarea
-        document.getElementById('existingProfessorNotes').innerHTML = '<p class="no-notes" style="text-align: center; font-style: italic;">Selecione aluno, disciplina e unidade para ver ou adicionar anotações.</p>'; // Clear existing notes
+        document.getElementById('professorNoteContent').value = '';
+        document.getElementById('existingProfessorNotes').innerHTML = '<p class="no-notes" style="text-align: center; font-style: italic;">Selecione aluno, disciplina e unidade para ver ou adicionar anotações.</p>';
     }
 
-
-    function showStudentBulletin() {
+    async function showStudentBulletin() {
         showSection(studentBulletinSection);
-        if (currentUser && currentUser.role === 'aluno') {
+        if (currentUser && currentUser.role === 'aluno' && currentUser.studentId) {
             const student = students.find(s => s.id === currentUser.studentId);
             const bulletinContentDiv = document.getElementById('studentBulletinContent');
             if (student) {
-                // Load all units by default for initial display
                 const allUnits = [...new Set(student.disciplines.map(d => d.unit))].sort((a, b) => a - b);
-                const bulletinHTML = generateBulletinHTML(student, allUnits, 'full'); // Display full, all units
+                const bulletinHTML = generateBulletinHTML(student, allUnits, 'full');
                 bulletinContentDiv.innerHTML = bulletinHTML;
 
-                // Make print options visible
                 if(studentPrintOptions) studentPrintOptions.classList.remove('hidden');
-                // Check all unit checkboxes by default for the student
                 document.querySelectorAll('.studentUnitCheckboxPrint').forEach(cb => cb.checked = true);
-                // Set default report type for student
                 const studentReportTypeFull = document.querySelector('input[name="studentReportType"][value="full"]');
                 if(studentReportTypeFull) studentReportTypeFull.checked = true;
 
-                displayStudentNotes(student); // NEW: Display professor notes for the student
-
+                displayStudentNotes(student);
             } else {
                 bulletinContentDiv.innerHTML = '<p style="text-align: center; font-style: italic;">Não foi possível encontrar seus dados de boletim.</p>';
                 if(studentPrintOptions) studentPrintOptions.classList.add('hidden');
-                document.getElementById('studentNotesContent').innerHTML = '<p class="no-notes">Nenhuma anotação disponível.</p>'; // NEW: Clear student notes
+                document.getElementById('studentNotesContent').innerHTML = '<p class="no-notes">Nenhuma anotação disponível.</p>';
             }
         } else {
-            bulletinContentDiv.innerHTML = '<p style="text-align: center; font-style: italic;">Você precisa estar logado como aluno para ver seu boletim.</p>';
-             if(studentPrintOptions) studentPrintOptions.classList.add('hidden');
-             document.getElementById('studentNotesContent').innerHTML = '<p class="no-notes">Nenhuma anotação disponível.</p>'; // NEW: Clear student notes
+            document.getElementById('studentBulletinContent').innerHTML = '<p style="text-align: center; font-style: italic;">Você precisa estar logado como aluno para ver seu boletim.</p>';
+            if(studentPrintOptions) studentPrintOptions.classList.add('hidden');
+            document.getElementById('studentNotesContent').innerHTML = '<p class="no-notes">Nenhuma anotação disponível.</p>';
         }
         userManagementSection.classList.add('hidden');
         sidebarHr.classList.add('hidden');
-        professorAgendaButton.classList.add('hidden'); // NEW
+        professorAgendaButton.classList.add('hidden');
     }
-
 
     function goHome() {
         if (currentUser) {
@@ -1531,140 +1463,248 @@
                 showStudentManagementSection();
                 userManagementSection.classList.remove('hidden');
                 sidebarHr.classList.remove('hidden');
-                professorAgendaButton.classList.add('hidden'); // NEW
+                professorAgendaButton.classList.add('hidden');
             } else if (currentUser.role === 'professor') {
                 showProfessorSection(currentUser);
                 userManagementSection.classList.add('hidden');
                 sidebarHr.classList.add('hidden');
-                professorAgendaButton.classList.remove('hidden'); // NEW
+                professorAgendaButton.classList.remove('hidden');
             } else if (currentUser.role === 'aluno') {
                 showStudentBulletin();
                 userManagementSection.classList.add('hidden');
                 sidebarHr.classList.add('hidden');
-                professorAgendaButton.classList.add('hidden'); // NEW
+                professorAgendaButton.classList.add('hidden');
             }
         } else {
             logout();
         }
     }
 
-
-    function logout() {
-        currentUser = null;
-        localStorage.removeItem('currentUser');
-        appContainer.classList.add('hidden');
-        loginContainer.classList.remove('hidden');
-        document.getElementById('username').value = '';
-        document.getElementById('password').value = '';
-        document.getElementById('loginError').textContent = '';
-        userManagementSection.classList.add('hidden');
-        sidebarHr.classList.add('hidden');
-        professorAgendaButton.classList.add('hidden'); // NEW
-        document.querySelector('#studentTable tbody').innerHTML = '';
-        document.querySelector('#usersTable tbody').innerHTML = '';
-        document.querySelector('#professorStudentTable tbody').innerHTML = '';
-        document.getElementById('addStudentSection').classList.add('hidden');
-        document.getElementById('addDisciplineSection').classList.add('hidden');
-        document.getElementById('studentBulletinContent').innerHTML = '<p style="text-align: center; font-style: italic;">Carregando boletim...</p>';
-        if(studentPrintOptions) studentPrintOptions.classList.add('hidden'); // Hide student print options on logout
-        document.getElementById('studentNotesContent').innerHTML = '<p class="no-notes">Nenhuma anotação disponível.</p>'; // NEW: Clear student notes
+    async function logout() {
+        try {
+            await signOut(auth);
+            currentUser = null;
+            localStorage.removeItem('currentUser'); // Clear local storage for persistence
+            appContainer.classList.add('hidden');
+            loginContainer.classList.remove('hidden');
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('loginError').textContent = '';
+            userManagementSection.classList.add('hidden');
+            sidebarHr.classList.add('hidden');
+            professorAgendaButton.classList.add('hidden');
+            document.querySelector('#studentTable tbody').innerHTML = '';
+            document.querySelector('#usersTable tbody').innerHTML = '';
+            document.querySelector('#professorStudentTable tbody').innerHTML = '';
+            document.getElementById('addStudentSection').classList.add('hidden');
+            document.getElementById('addDisciplineSection').classList.add('hidden');
+            document.getElementById('studentBulletinContent').innerHTML = '<p style="text-align: center; font-style: italic;">Carregando boletim...</p>';
+            if(studentPrintOptions) studentPrintOptions.classList.add('hidden');
+            document.getElementById('studentNotesContent').innerHTML = '<p class="no-notes">Nenhuma anotação disponível.</p>';
+        } catch (error) {
+            console.error("Error signing out:", error);
+            alert("Erro ao sair. Por favor, tente novamente.");
+        }
     }
 
-    document.getElementById('loginButton').addEventListener('click', function() {
+    // Login Logic
+    document.getElementById('loginButton').addEventListener('click', async function() {
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
         const loginError = document.getElementById('loginError');
         const username = usernameInput.value;
         const password = passwordInput.value;
         loginError.textContent = '';
-        let foundUser = users.find(user => user.username === username && user.password === password);
-        if (foundUser) {
-            currentUser = foundUser;
-            // Only store non-sensitive data in localStorage for currentUser state
-            localStorage.setItem('currentUser', JSON.stringify({ username: foundUser.username, role: foundUser.role }));
-            loginContainer.classList.add('hidden');
-            appContainer.classList.remove('hidden');
-            if (currentUser.role === 'admin' || currentUser.role === 'coordenador') {
-                showStudentManagementSection();
-                userManagementSection.classList.remove('hidden');
-                sidebarHr.classList.remove('hidden');
-                professorAgendaButton.classList.add('hidden'); // NEW
-            } else if (currentUser.role === 'professor') {
-                showProfessorSection(currentUser);
-                userManagementSection.classList.add('hidden');
-                sidebarHr.classList.add('hidden');
-                professorAgendaButton.classList.remove('hidden'); // NEW
-            } else if (currentUser.role === 'aluno') {
-                 // Find the corresponding student data
-                const student = students.find(s => s.id === currentUser.studentId || (s.matricula && s.matricula.trim().toLowerCase() === currentUser.username.trim().toLowerCase())); // Link by studentId first, then matricula/username
-                if (student) {
-                    currentUser.studentId = student.id; // Link student user to student data
-                }
-                showStudentBulletin();
-                userManagementSection.classList.add('hidden');
-                sidebarHr.classList.add('hidden');
-                professorAgendaButton.classList.add('hidden'); // NEW
-            }
-        }
-        else {
-            loginError.textContent = 'Usuário ou senha inválidos.';
-        }
-    });
 
-    window.addEventListener('load', function() {
-        loadData(); // Load data first
-        // No longer need to call updateStudentShiftDisplay on load if it's a direct input
-        // updateStudentShiftDisplay();
+        try {
+            // Find user in Firestore
+            const q = query(usersCollectionRef, where("username", "==", username), where("password", "==", password));
+            const querySnapshot = await getDocs(q);
 
-        const savedUser = JSON.parse(localStorage.getItem('currentUser'));
-        if (savedUser) {
-            // Find the full user object from the loaded users data
-            currentUser = users.find(user => user.username === savedUser.username && user.role === savedUser.role);
-             if (currentUser && currentUser.role === 'aluno') {
-                const student = students.find(s => s.id === currentUser.studentId || (s.matricula && s.matricula.trim().toLowerCase() === currentUser.username.trim().toLowerCase())); // Link by studentId first, then matricula/username
-                 if (student) {
-                    currentUser.studentId = student.id; // Link student user to student data
-                 } else {
-                     console.error('Aluno data not found for logged in user:', currentUser.name);
-                     // Optionally log out the user if student data is essential
-                     logout();
-                     return; // Stop further execution if student data is missing for an aluno user
-                 }
-            }
-            if (currentUser) {
+            if (!querySnapshot.empty) {
+                currentUser = querySnapshot.docs[0].data();
+                // Store minimal info for session persistence (e.g., username, role)
+                localStorage.setItem('currentUser', JSON.stringify({ username: currentUser.username, role: currentUser.role, studentId: currentUser.studentId || null }));
+
                 appContainer.classList.remove('hidden');
                 loginContainer.classList.add('hidden');
+
                 if (currentUser.role === 'admin' || currentUser.role === 'coordenador') {
                     showStudentManagementSection();
                     userManagementSection.classList.remove('hidden');
                     sidebarHr.classList.remove('hidden');
-                    professorAgendaButton.classList.add('hidden'); // NEW
+                    professorAgendaButton.classList.add('hidden');
                 } else if (currentUser.role === 'professor') {
                     showProfessorSection(currentUser);
                     userManagementSection.classList.add('hidden');
                     sidebarHr.classList.add('hidden');
-                    professorAgendaButton.classList.remove('hidden'); // NEW
+                    professorAgendaButton.classList.remove('hidden');
                 } else if (currentUser.role === 'aluno') {
+                    // Ensure studentId is linked for aluno roles
+                    const student = students.find(s => s.id === currentUser.studentId || (s.matricula && s.matricula.trim().toLowerCase() === currentUser.username.trim().toLowerCase()));
+                    if (student) {
+                        currentUser.studentId = student.id;
+                        await setDoc(doc(usersCollectionRef, currentUser.username), { studentId: student.id }, { merge: true }); // Update user doc with studentId if not present
+                    }
                     showStudentBulletin();
                     userManagementSection.classList.add('hidden');
                     sidebarHr.classList.add('hidden');
-                    professorAgendaButton.classList.add('hidden'); // NEW
+                    professorAgendaButton.classList.add('hidden');
                 }
             } else {
-                logout(); // Logout if saved user data is invalid or not found in loaded users
+                loginError.textContent = 'Usuário ou senha inválidos.';
+            }
+        } catch (error) {
+            console.error("Error during login:", error);
+            loginError.textContent = 'Erro ao fazer login. Tente novamente.';
+        }
+    });
+
+    // --- Start Firebase Authentication and Firestore Listeners Setup ---
+    async function initializeAppAndAuth() {
+        try {
+            if (typeof __initial_auth_token !== 'undefined') {
+                await signInWithCustomToken(auth, __initial_auth_token);
+                console.log("Signed in with custom token.");
+            } else {
+                await signInAnonymously(auth);
+                console.log("Signed in anonymously.");
+            }
+        } catch (error) {
+            console.error("Error during initial Firebase sign-in:", error);
+            // Optionally, handle error, e.g., show a message to the user that auth failed.
+        }
+    }
+
+    onAuthStateChanged(auth, async (user) => {
+        authReady = true;
+        console.log("onAuthStateChanged triggered. User:", user ? user.uid : "null");
+
+        if (user) {
+            // User is signed in (either via custom token or anonymously).
+            // Now, setup Firestore listeners and determine the application's current user role.
+            setupFirestoreListeners();
+
+            // Attempt to retrieve or set currentUser based on Firestore 'users' collection
+            const savedUser = JSON.parse(localStorage.getItem('currentUser'));
+            if (savedUser && savedUser.username) {
+                // Try to find the user in the fetched users array (from Firestore listener)
+                const storedUserFromFirestore = users.find(u => u.username === savedUser.username);
+                if (storedUserFromFirestore) {
+                    currentUser = storedUserFromFirestore;
+                    if (currentUser.role === 'aluno' && currentUser.studentId) {
+                        const student = students.find(s => s.id === currentUser.studentId || (s.matricula && s.matricula.trim().toLowerCase() === currentUser.username.trim().toLowerCase()));
+                        if (!student) {
+                            console.warn('Student data not found for existing user. Logging out.');
+                            logout();
+                            return;
+                        }
+                        currentUser.studentId = student.id;
+                    }
+                    appContainer.classList.remove('hidden');
+                    loginContainer.classList.add('hidden');
+                    goHome();
+                } else {
+                    console.warn("Saved user not found in Firestore. Logging out.");
+                    logout();
+                }
+            } else {
+                // No saved user or invalid saved user, show login screen.
+                loginContainer.classList.remove('hidden');
+                appContainer.classList.add('hidden');
             }
         } else {
+            // User is signed out.
+            currentUser = null;
+            localStorage.removeItem('currentUser');
             loginContainer.classList.remove('hidden');
             appContainer.classList.add('hidden');
         }
     });
 
+    // Call the initial auth function on window load
+    window.addEventListener('load', initializeAppAndAuth);
+
+    // --- End Firebase Authentication and Firestore Listeners Setup ---
+
+    // Firestore Listeners
+    function setupFirestoreListeners() {
+        // Students Listener
+        onSnapshot(studentsCollectionRef, (snapshot) => {
+            students = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // Ensure all students have professorNotes and matricula
+            students = students.map(s => {
+                if (!Array.isArray(s.professorNotes)) s.professorNotes = [];
+                if (!s.matricula) s.matricula = '';
+                return s;
+            });
+            renderStudentTable(students);
+            // Re-render other tables/sections if they depend on student data
+            if (currentUser && currentUser.role === 'professor') {
+                loadProfessorTable();
+                loadProfessorStudentNotes();
+            }
+            if (currentUser && currentUser.role === 'aluno') {
+                showStudentBulletin();
+            }
+            populateStudentSelectForDiscipline(document.getElementById('disciplineClassSelect').value);
+            populateStudentPrintSelect(document.getElementById('printClassSelect').value);
+        }, (error) => {
+            console.error("Error listening to students collection:", error);
+            alert("Erro ao carregar dados de alunos. Verifique sua conexão ou tente novamente.");
+        });
+
+        // Users Listener
+        onSnapshot(usersCollectionRef, async (snapshot) => {
+            const fetchedUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // If users collection is empty (first run), add the default admin user
+            if (fetchedUsers.length === 0) {
+                console.log("Users collection is empty, populating with default admin.");
+                const defaultAdmin = {
+                    username: 'administrador',
+                    password: 'admsenac2024',
+                    role: 'admin',
+                    name: 'Administrador',
+                    assignments: []
+                };
+                // Use setDoc with a specific ID (username) to prevent multiple admin docs
+                await setDoc(doc(usersCollectionRef, defaultAdmin.username), defaultAdmin);
+                users = [defaultAdmin]; // Initialize local users array with admin
+            } else {
+                users = fetchedUsers;
+            }
+
+            // Ensure all users have an assignments array if missing
+            users = users.map(user => {
+                if (!Array.isArray(user.assignments)) user.assignments = [];
+                return user;
+            });
+
+            renderUsersTable(users);
+
+            // If current user is still valid, update their info
+            if (currentUser && authReady) {
+                const updatedCurrentUser = users.find(u => u.username === currentUser.username);
+                if (updatedCurrentUser) {
+                    currentUser = updatedCurrentUser;
+                    goHome(); // Re-render UI based on updated current user data
+                } else {
+                    // Current user was deleted from Firestore, log out
+                    alert("Seu usuário foi removido. Você será desconectado.");
+                    logout();
+                }
+            }
+        }, (error) => {
+            console.error("Error listening to users collection:", error);
+            alert("Erro ao carregar dados de usuários. Verifique sua conexão ou tente novamente.");
+        });
+    }
 
     function renderStudentTable(studentsToRender) {
         const tableBody = document.querySelector('#studentTable tbody');
         tableBody.innerHTML = '';
         if (!studentsToRender || studentsToRender.length === 0) {
-            const colspan = 14; // Updated for new columns: Matrícula + Média
+            const colspan = 14;
             const row = tableBody.insertRow();
             const cell = row.insertCell();
             cell.colSpan = colspan;
@@ -1678,16 +1718,16 @@
             if (sortedDisciplines.length === 0) {
                 const row = tableBody.insertRow();
                 row.classList.add('student-group-header');
-                row.insertCell().textContent = student.matricula || '-'; // Display matricula
+                row.insertCell().textContent = student.matricula || '-';
                 row.insertCell().textContent = student.name;
                 row.insertCell().textContent = student.course;
                 row.insertCell().textContent = student.class;
                 const emptyCell = row.insertCell();
-                emptyCell.colSpan = 9; // Matrícula, Name, Course, Class are 4. Total 14. 14-4=10. Ações is 1. so 14-5 = 9
+                emptyCell.colSpan = 9;
                 emptyCell.textContent = "Nenhuma disciplina adicionada.";
                 emptyCell.style.textAlign = 'center';
                 emptyCell.style.fontStyle = 'italic';
-                row.insertCell().textContent = ''; // For actions cell
+                row.insertCell().textContent = '';
             } else {
                 sortedDisciplines.forEach((discipline, index) => {
                     const row = tableBody.insertRow();
@@ -1700,7 +1740,7 @@
                     }
                     row.insertCell().textContent = discipline.discipline;
                     row.insertCell().textContent = discipline.unit;
-                    ['test1', 'test2', 'eval1', 'media', 'finalGrade', 'situation', 'observation'].forEach(field => { // Added media
+                    ['test1', 'test2', 'eval1', 'media', 'finalGrade', 'situation', 'observation'].forEach(field => {
                         const cell = row.insertCell(); cell.classList.add('editable-cell');
                         cell.dataset.studentId = student.id; cell.dataset.disciplineName = discipline.discipline; cell.dataset.unitNumber = discipline.unit; cell.dataset.field = field;
                         if (field === 'observation') cell.dataset.type = 'text';
@@ -1709,21 +1749,20 @@
                             cell.dataset.options = ',"Aprovado","Recuperacao","Reprovado"';
                         } else if (field === 'situation') {
                              cell.dataset.type = 'select';
-                             cell.dataset.options = ',"Aprovado","Recuperado","Recuperado","Pendente"'; // Added Recuperado as option
-                        } else if (field === 'media') { // Media field should be display-only
-                            cell.classList.remove('editable-cell'); // Remove editable class for media
-                            cell.dataset.type = 'text'; // But still treat as text for display
+                             cell.dataset.options = ',"Aprovado","Recuperado","Recuperado","Pendente"';
+                        } else if (field === 'media') {
+                            cell.classList.remove('editable-cell');
+                            cell.dataset.type = 'text';
                         }
-                         else { // test1, test2, eval1 are numerical select
+                         else {
                             cell.dataset.type = 'select';
-                            cell.dataset.options = gradeOptions.join(','); // Use generated grade options
+                            cell.dataset.options = gradeOptions.join(',');
                         }
-                        // Display value: if it's media, round to 2 decimal places. Otherwise, use existing logic.
                         let displayValue = discipline[field];
                         if (field === 'media' && displayValue !== undefined && displayValue !== null && displayValue !== '') {
-                            displayValue = parseFloat(displayValue).toFixed(2).replace('.', ','); // Display with comma
+                            displayValue = parseFloat(displayValue).toFixed(2).replace('.', ',');
                         } else if (['test1', 'test2', 'eval1'].includes(field) && displayValue !== undefined && displayValue !== null && displayValue !== '') {
-                            displayValue = String(displayValue).replace('.', ','); // Display numerical grades with comma
+                            displayValue = String(displayValue).replace('.', ',');
                         }
                         else if (displayValue === undefined || displayValue === null || displayValue === '') {
                             displayValue = (field === 'observation' || field === 'finalGrade' || field === 'situation') ? '' : '-';
@@ -1739,7 +1778,6 @@
         attachDeleteButtonListeners('#studentTable');
     }
 
-     // Modified renderProfessorTable to use the new assignments structure
     function renderProfessorTable(studentsToRender, selectedDiscipline, selectedClass, selectedUnit) {
         const tableBody = document.querySelector('#professorStudentTable tbody');
         tableBody.innerHTML = '';
@@ -1750,21 +1788,21 @@
 
         if (!studentsToRender || studentsToRender.length === 0 || !assignedClassesForDiscipline.includes(selectedClass)) {
              document.getElementById('professorNoStudentsMessage').classList.remove('hidden');
-            document.querySelector('#professorStudentTable thead').classList.add('hidden'); // Hide header if no students
+            document.querySelector('#professorStudentTable thead').classList.add('hidden');
              return;
         } else {
-             document.getElementById('professorNoStudentsMessage').classList.remove('hidden');
-             document.querySelector('#professorStudentTable thead').classList.remove('hidden'); // Show header if students are rendered
+             document.getElementById('professorNoStudentsMessage').classList.add('hidden');
+             document.querySelector('#professorStudentTable thead').classList.remove('hidden');
         }
 
         studentsToRender.forEach(student => {
-            const disciplineData = student.disciplines.find(d => d.discipline === selectedDiscipline && d.unit == selectedUnit); // Use == for unit comparison due to string/number mix
+            const disciplineData = student.disciplines.find(d => d.discipline === selectedDiscipline && d.unit == selectedUnit);
             const row = tableBody.insertRow();
-            row.insertCell().textContent = student.matricula || '-'; // Display matricula
+            row.insertCell().textContent = student.matricula || '-';
             row.insertCell().textContent = student.name;
             row.insertCell().textContent = student.course;
             row.insertCell().textContent = student.unit;
-            ['test1', 'test2', 'eval1', 'media', 'finalGrade', 'situation', 'observation'].forEach(field => { // Added media
+            ['test1', 'test2', 'eval1', 'media', 'finalGrade', 'situation', 'observation'].forEach(field => {
                 const cell = row.insertCell(); cell.classList.add('editable-cell');
                 cell.dataset.studentId = student.id; cell.dataset.disciplineName = selectedDiscipline; cell.dataset.unitNumber = selectedUnit; cell.dataset.field = field;
                 if (field === 'observation') cell.dataset.type = 'text';
@@ -1773,21 +1811,20 @@
                     cell.dataset.options = ',"Aprovado","Recuperacao","Reprovado"';
                 } else if (field === 'situation') {
                     cell.dataset.type = 'select';
-                    cell.dataset.options = ',"Aprovado","Recuperado","Recuperado","Pendente"'; // Added Recuperado as option
-                } else if (field === 'media') { // Media field should be display-only
-                    cell.classList.remove('editable-cell'); // Remove editable class for media
-                    cell.dataset.type = 'text'; // But still treat as text for display
+                    cell.dataset.options = ',"Aprovado","Recuperado","Recuperado","Pendente"';
+                } else if (field === 'media') {
+                    cell.classList.remove('editable-cell');
+                    cell.dataset.type = 'text';
                 }
-                else { // test1, test2, eval1 are numerical select
+                else {
                     cell.dataset.type = 'select';
-                    cell.dataset.options = gradeOptions.join(','); // Use generated grade options
+                    cell.dataset.options = gradeOptions.join(',');
                 }
-                 // Display value: if it's media, round to 2 decimal places. Otherwise, use existing logic.
                 let displayValue = disciplineData ? disciplineData[field] : undefined;
                 if (field === 'media' && displayValue !== undefined && displayValue !== null && displayValue !== '') {
-                    displayValue = parseFloat(displayValue).toFixed(2).replace('.', ','); // Display with comma
+                    displayValue = parseFloat(displayValue).toFixed(2).replace('.', ',');
                 } else if (['test1', 'test2', 'eval1'].includes(field) && displayValue !== undefined && displayValue !== null && displayValue !== '') {
-                    displayValue = String(displayValue).replace('.', ','); // Display numerical grades with comma
+                    displayValue = String(displayValue).replace('.', ',');
                 }
                 else if (displayValue === undefined || displayValue === null || displayValue === '') {
                     displayValue = (field === 'observation' || field === 'finalGrade' || field === 'situation') ? '' : '-';
@@ -1798,8 +1835,6 @@
         attachEditableCellListeners('#professorStudentTable');
     }
 
-
-    // Modified renderUsersTable to display new professor assignments structure
     function renderUsersTable(usersToRender) {
         const tableBody = document.querySelector('#usersTable tbody');
         tableBody.innerHTML = '';
@@ -1809,7 +1844,7 @@
             noUsersMessage.classList.remove('hidden');
             document.getElementById('usersTable').classList.add('hidden');
         } else {
-            noUsersMessage.classList.add('hidden'); // Corrected logic: hide message if there are users
+            noUsersMessage.classList.add('hidden');
             document.getElementById('usersTable').classList.remove('hidden');
             displayUsers.forEach(user => {
                 const row = tableBody.insertRow();
@@ -1817,29 +1852,25 @@
                 row.insertCell().textContent = user.username;
                 row.insertCell().textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
 
-                // Display professor assignments based on the new structure
                 if (user.role === 'professor' && user.assignments) {
                     const disciplinesText = user.assignments.map(assignment => assignment.discipline).join(', ');
-                    // Concatenate discipline and classes for display in a more readable way
                     const classesText = user.assignments.map(assignment => `${assignment.discipline}: ${assignment.classes.join(', ')}`).join('; ');
 
                     row.insertCell().textContent = disciplinesText || '-';
                     row.insertCell().textContent = classesText || '-';
                 } else {
-                    row.insertCell().textContent = '-'; // No disciplines for non-professors
-                    row.insertCell().textContent = '-'; // No classes for non-professors
+                    row.insertCell().textContent = '-';
+                    row.insertCell().textContent = '-';
                 }
 
-                row.insertCell().textContent = user.password; // Display password for demonstration (should be removed in real app)
+                row.insertCell().textContent = user.password;
                 const actionsCell = row.insertCell();
 
-                // Always show edit/delete buttons for professors and coordinators, and delete for students
-                 if (user.role !== 'admin') { // Admin cannot be edited/deleted here
+                if (user.role !== 'admin') {
                     actionsCell.innerHTML = `<button type="button" class="button" onclick="editUser('${user.username}')">Editar</button> <button type="button" class="button delete-button" onclick="deleteUser('${user.username}')">Excluir</button>`;
-                 } else {
+                } else {
                     actionsCell.textContent = '-';
-                 }
-                 // Note: Edit for 'aluno' is currently limited in the modal, but the button is shown.
+                }
             });
         }
     }
@@ -1852,40 +1883,36 @@
             cell.parentNode.replaceChild(newCell, cell);
         });
         table.querySelectorAll('.editable-cell').forEach(cell => {
-            cell.removeEventListener('click', activateEditableCell); // Prevent multiple listeners
+            cell.removeEventListener('click', activateEditableCell);
             cell.addEventListener('click', activateEditableCell);
         });
     }
 
     function activateEditableCell(event) {
         const cell = event.target.closest('.editable-cell');
-        // Prevent editing if the cell has 'media' as its field or is not editable
         if (!cell || cell.classList.contains('editing') || cell.dataset.field === 'media') return;
 
         const isProfessorTable = cell.closest('#professorStudentTable');
         const isStudentTable = cell.closest('#studentTable');
 
-        // Prevent editing based on user role and table
-        if (currentUser.role === 'professor' && isStudentTable) return; // Professors can only edit their assigned students/disciplines via professor table
-        if ((currentUser.role === 'admin' || currentUser.role === 'coordenador') && isProfessorTable) return; // Admins/Coordinators can edit via student table
-        if (currentUser.role === 'aluno') return; // Students cannot edit
+        if (currentUser.role === 'professor' && isStudentTable) return;
+        if ((currentUser.role === 'admin' || currentUser.role === 'coordenador') && isProfessorTable) return;
+        if (currentUser.role === 'aluno') return;
 
-         // Additional check for professor: ensure the selected cell's discipline/class is assigned to the professor
         if (currentUser.role === 'professor' && isProfessorTable) {
             const disciplineName = cell.dataset.disciplineName;
             const classMatch = currentUser.assignments.some(assignment =>
                 assignment.discipline === disciplineName &&
-                assignment.classes.includes(document.getElementById('professorClassSelect').value) // Check against the selected class in the professor view
+                assignment.classes.includes(document.getElementById('professorClassSelect').value)
             );
             if (!classMatch) {
-                 alert('Você não está atribuído a esta disciplina nesta turma.'); // Optional: provide feedback
-                return; // Prevent editing if not assigned
+                 alert('Você não está atribuído a esta disciplina nesta turma.');
+                return;
             }
         }
 
-
         cell.classList.add('editing');
-        const currentValue = cell.querySelector('span') ? cell.querySelector('span').textContent.trim() : cell.textContent.trim(); // Get value from span if exists
+        const currentValue = cell.querySelector('span') ? cell.querySelector('span').textContent.trim() : cell.textContent.trim();
         const studentId = cell.dataset.studentId;
         const disciplineName = cell.dataset.disciplineName;
         const unitNumber = parseInt(cell.dataset.unitNumber);
@@ -1898,14 +1925,13 @@
             options.forEach(optionValue => {
                 const option = document.createElement('option');
                 option.value = optionValue;
-                // For numerical grades, display the number with comma. For mentions/situations, display the full text.
                 if (['test1', 'test2', 'eval1'].includes(field)) {
-                    option.textContent = String(optionValue).replace('.', ','); // Display with comma for decimals
+                    option.textContent = String(optionValue).replace('.', ',');
                 } else {
                     option.textContent = optionValue;
                 }
 
-                if (currentValue.replace(',', '.') == optionValue || (currentValue === '-' && optionValue === '')) { // Compare after replacing comma with dot for numerical values
+                if (currentValue.replace(',', '.') == optionValue || (currentValue === '-' && optionValue === '')) {
                     option.selected = true;
                 }
                 inputElement.appendChild(option);
@@ -1918,10 +1944,10 @@
         inputElement.addEventListener('keypress', function(e) { if (e.key === 'Enter') saveEditableCell(e); });
     }
 
-    function saveEditableCell(event) {
+    async function saveEditableCell(event) {
         const inputElement = event.target;
         const cell = inputElement.closest('.editable-cell');
-        if (!cell || !cell.classList.contains('editing') || cell.dataset.field === 'media') return; // Prevent saving for media field
+        if (!cell || !cell.classList.contains('editing') || cell.dataset.field === 'media') return;
         let newValue = inputElement.value.trim();
         const studentId = cell.dataset.studentId;
         const disciplineName = cell.dataset.disciplineName;
@@ -1932,31 +1958,28 @@
         if (student) {
             let disciplineEntry = student.disciplines.find(d => d.discipline === disciplineName && d.unit === unitNumber);
             if (!disciplineEntry) {
-                // Initialize all numerical fields to empty string, and mention/situation to default
                 disciplineEntry = {
                     discipline: disciplineName,
                     unit: unitNumber,
-                    test1: '', test2: '', eval1: '', media: '', // Initialize media field
+                    test1: '', test2: '', eval1: '', media: '',
                     finalGrade: '', situation: 'Pendente', observation: ''
                 };
                 student.disciplines.push(disciplineEntry);
             }
-            // Parse numerical values if applicable (replace comma with dot for parseFloat)
             if (['test1', 'test2', 'eval1'].includes(field)) {
-                newValue = newValue === '' ? '' : parseFloat(newValue.replace(',', '.')); // Store empty string for empty input, or float for numbers
-                if (isNaN(newValue) && newValue !== '') { // If not a number and not empty, revert
-                    newValue = parseFloat(inputElement.defaultValue.replace(',', '.')); // Revert to parsed default
+                newValue = newValue === '' ? '' : parseFloat(newValue.replace(',', '.'));
+                if (isNaN(newValue) && newValue !== '') {
+                    newValue = parseFloat(inputElement.defaultValue.replace(',', '.'));
                     alert('Por favor, insira um número válido para a nota.');
                 }
             }
 
             disciplineEntry[field] = newValue;
 
-            // Recalculate media after any relevant field change
             const t1 = parseFloat(disciplineEntry.test1) || 0;
             const t2 = parseFloat(disciplineEntry.test2) || 0;
             const ev1 = parseFloat(disciplineEntry.eval1) || 0;
-            disciplineEntry.media = ((t1 + t2 + ev1) / 3).toFixed(2); // Calculate and store media, rounded to 2 decimal places
+            disciplineEntry.media = ((t1 + t2 + ev1) / 3).toFixed(2);
 
             let displayValue = newValue;
 
@@ -1966,23 +1989,23 @@
                 displayValue = String(displayValue).replace('.', ',');
             }
             else if (displayValue === '' || displayValue === null || displayValue === undefined) {
-                 displayValue = (field === 'observation' || field === 'finalGrade' || field === 'situation') ? '' : '-'; // Display '-' for empty numerical/evaluation, '' for observation
+                 displayValue = (field === 'observation' || field === 'finalGrade' || field === 'situation') ? '' : '-';
             }
 
             cell.innerHTML = `<span>${displayValue}</span>`;
-            saveData(); // Save data after editing a cell
-            // Re-render table to ensure media column updates if relevant fields changed
-            renderStudentTable(students);
-            if (currentUser && currentUser.role === 'professor') loadProfessorTable();
-            if (currentUser && currentUser.role === 'aluno' && currentUser.studentId === student.id) showStudentBulletin();
-
+            try {
+                await updateDoc(doc(studentsCollectionRef, student.id), { disciplines: student.disciplines });
+                // console.log("Student discipline updated in Firestore.");
+            } catch (error) {
+                console.error("Error updating student discipline in Firestore:", error);
+                alert("Erro ao salvar a nota. Tente novamente.");
+            }
         } else {
-            console.error('Erro: Aluno não encontrado para edição.'); cell.innerHTML = `<span>${inputElement.defaultValue.replace('.', ',')}</span>`; // Revert if error, display with comma
+            console.error('Erro: Aluno não encontrado para edição.'); cell.innerHTML = `<span>${inputElement.defaultValue.replace('.', ',')}</span>`;
         }
         cell.classList.remove('editing');
     }
 
-    // Modified populateProfessorSelects to use the new assignments structure
     function populateProfessorSelects(user) {
         const disciplineSelect = document.getElementById('professorDisciplineSelect');
         const classSelect = document.getElementById('professorClassSelect');
@@ -1990,20 +2013,16 @@
 
         disciplineSelect.innerHTML = '<option value="">Selecione a Disciplina</option>';
         classSelect.innerHTML = '<option value="">Selecione a Turma</option>';
-         unitSelect.value = ''; // Reset unit selection
+         unitSelect.value = '';
 
         if (user && user.assignments) {
-            // Populate discipline select based on assigned disciplines
             const uniqueDisciplines = [...new Set(user.assignments.map(assignment => assignment.discipline))].sort();
             uniqueDisciplines.forEach(discipline => { const option = document.createElement('option'); option.value = discipline; option.textContent = discipline; disciplineSelect.appendChild(option); });
 
-            // Add event listener to discipline select to populate class select
             disciplineSelect.removeEventListener('change', updateProfessorClassSelect);
             disciplineSelect.addEventListener('change', updateProfessorClassSelect);
 
-            // Initial population of class select based on the default (or first) selected discipline
             updateProfessorClassSelect();
-
         }
 
         disciplineSelect.removeEventListener('change', loadProfessorTable);
@@ -2015,15 +2034,13 @@
         unitSelect.addEventListener('change', loadProfessorTable);
     }
 
-    // New function to update the class select based on the selected discipline for the professor
     function updateProfessorClassSelect() {
         const disciplineSelect = document.getElementById('professorDisciplineSelect');
         const classSelect = document.getElementById('professorClassSelect');
         const selectedDiscipline = disciplineSelect.value;
 
-        // Also update notes section selects
-        const notesClassSelect = document.getElementById('notesClassSelect'); // Make sure this is defined
-        const notesStudentSelect = document.getElementById('notesStudentSelect'); // Make sure this is defined
+        const notesClassSelect = document.getElementById('notesClassSelect');
+        const notesStudentSelect = document.getElementById('notesStudentSelect');
 
         notesClassSelect.innerHTML = '<option value="">Selecione a Turma</option>';
         notesClassSelect.disabled = true;
@@ -2043,7 +2060,6 @@
                     option.value = className;
                     option.textContent = className;
                     classSelect.appendChild(option);
-                    // Also add to notesClassSelect
                     const notesOption = document.createElement('option');
                     notesOption.value = className;
                     notesOption.textContent = className;
@@ -2053,20 +2069,16 @@
                 classSelect.disabled = false;
             }
         }
-         // Also clear the table and show message when discipline changes
         document.querySelector('#professorStudentTable tbody').innerHTML = '';
         document.getElementById('professorNoStudentsMessage').classList.remove('hidden');
-         document.querySelector('#professorStudentTable thead').classList.add('hidden'); // Hide table header
+        document.querySelector('#professorStudentTable thead').classList.add('hidden');
     }
 
-
-     // Modified loadProfessorTable to use the new assignments structure and selected class
     function loadProfessorTable() {
         const selectedDiscipline = document.getElementById('professorDisciplineSelect').value;
         const selectedClass = document.getElementById('professorClassSelect').value;
         const selectedUnit = document.getElementById('professorUnitSelect').value;
 
-        // Check if the professor is assigned to this discipline in this class
         const isAssigned = currentUser && currentUser.assignments &&
                            currentUser.assignments.some(assignment =>
                                assignment.discipline === selectedDiscipline &&
@@ -2079,89 +2091,69 @@
         } else {
             document.querySelector('#professorStudentTable tbody').innerHTML = '';
             document.getElementById('professorNoStudentsMessage').classList.remove('hidden');
-             document.querySelector('#professorStudentTable thead').classList.add('hidden'); // Hide table header
+            document.querySelector('#professorStudentTable thead').classList.add('hidden');
         }
     }
 
-
-    function addStudent() {
+    async function addStudent() {
         const studentNameInput = document.getElementById('studentName');
         const studentMatriculaInput = document.getElementById('studentMatricula');
         const classSelect = document.getElementById('class');
-        const studentShiftSelect = document.getElementById('studentShift'); // Get the new shift select
+        const studentShiftSelect = document.getElementById('studentShift');
 
         const name = studentNameInput.value.trim();
         const matricula = studentMatriculaInput.value.trim();
         const className = classSelect.value;
-        const studentShift = studentShiftSelect.value; // Get the selected shift
+        const studentShift = studentShiftSelect.value;
 
-        const classInfo = getClassInfo(className); // Still used for course
+        const classInfo = getClassInfo(className);
 
-        if (!name || !matricula || !className || !studentShift) { // Validate studentShift now
+        if (!name || !matricula || !className || !studentShift) {
             alert('Por favor, preencha o Nome do Aluno, a Matrícula, selecione a Turma e o Turno.');
             return;
         }
 
-        // Check if matricula already exists
-        if (students.some(s => s.matricula && s.matricula.toLowerCase() === matricula.toLowerCase())) {
+        const q = query(studentsCollectionRef, where("matricula", "==", matricula));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
             alert('Matrícula já existe. Por favor, insira uma matrícula única.');
             return;
         }
 
-        // Generate a simple unique ID (timestamp + random number)
-        const newStudentId = 's' + Date.now() + Math.floor(Math.random() * 1000);
-
-        // Use studentShift for 'unit' field now (This means 'unit' will store "Manhã" or "Tarde" for student's shift)
-        const newStudent = { id: newStudentId, matricula: matricula, name: name, course: classInfo.course, class: className, unit: studentShift, disciplines: [], professorNotes: [] };
-        students.push(newStudent);
-        studentNameInput.value = '';
-        studentMatriculaInput.value = '';
-        classSelect.value = '';
-        studentShiftSelect.value = ''; // Clear shift select
-        saveData();
-        renderStudentTable(students);
-        populateClassSelect(document.getElementById('disciplineClassSelect')); populateStudentSelectForDiscipline();
-        populateClassSelect(document.getElementById('printClassSelect')); populateStudentPrintSelect();
-        if (currentUser && currentUser.role === 'professor') loadProfessorTable();
-        alert('Aluno adicionado com sucesso!');
+        const newStudent = { matricula: matricula, name: name, course: classInfo.course, class: className, unit: studentShift, disciplines: [], professorNotes: [] };
+        try {
+            const docRef = await addDoc(studentsCollectionRef, newStudent);
+            // console.log("Student added with ID:", docRef.id);
+            // No need to manually update `students` array, onSnapshot will handle it
+            studentNameInput.value = '';
+            studentMatriculaInput.value = '';
+            classSelect.value = '';
+            studentShiftSelect.value = '';
+            alert('Aluno adicionado com sucesso!');
+        } catch (error) {
+            console.error("Error adding student to Firestore:", error);
+            alert("Erro ao adicionar aluno. Tente novamente.");
+        }
     }
 
-
-    // No longer need updateStudentShiftDisplay since it's a direct input
-    // function updateStudentShiftDisplay() {
-    //     const classSelect = document.getElementById('class');
-    //     const studentShiftDisplay = document.getElementById('studentShiftDisplay');
-    //     const selectedClass = classSelect.value;
-    //     if (selectedClass) {
-    //         const classInfo = getClassInfo(selectedClass);
-    //         studentShiftDisplay.textContent = classInfo.unit;
-    //     } else {
-    //         studentShiftDisplay.textContent = '-';
-    //     }
-    // }
-
-
-    // Event listeners for score inputs to calculate media dynamically
     document.getElementById('test1').addEventListener('change', calculateAndDisplayMedia);
     document.getElementById('test2').addEventListener('change', calculateAndDisplayMedia);
     document.getElementById('evaluation1').addEventListener('change', calculateAndDisplayMedia);
 
     function calculateAndDisplayMedia() {
-        const test1 = parseFloat(document.getElementById('test1').value.replace(',', '.')); // Parse with dot
-        const test2 = parseFloat(document.getElementById('test2').value.replace(',', '.')); // Parse with dot
-        const eval1 = parseFloat(document.getElementById('evaluation1').value.replace(',', '.')); // Parse with dot
+        const test1 = parseFloat(document.getElementById('test1').value.replace(',', '.'));
+        const test2 = parseFloat(document.getElementById('test2').value.replace(',', '.'));
+        const eval1 = parseFloat(document.getElementById('evaluation1').value.replace(',', '.'));
 
-        // Only calculate if all three scores are valid numbers
         if (!isNaN(test1) && !isNaN(test2) && !isNaN(eval1)) {
             const media = ((test1 + test2 + eval1) / 3).toFixed(2);
-            document.getElementById('mediaDisplay').textContent = media.replace('.', ','); // Display with comma
+            document.getElementById('mediaDisplay').textContent = media.replace('.', ',');
         } else {
-            document.getElementById('mediaDisplay').textContent = '-'; // Display hyphen if any score is invalid
+            document.getElementById('mediaDisplay').textContent = '-';
         }
     }
 
-
-    function addDiscipline() {
+    async function addDiscipline() {
         const disciplineClassSelect = document.getElementById('disciplineClassSelect');
         const studentSelect = document.getElementById('studentSelect');
         const disciplineSelect = document.getElementById('disciplineSelect');
@@ -2176,18 +2168,16 @@
         const studentId = studentSelect.value;
         const disciplineName = disciplineSelect.value;
         const unitNumber = parseInt(unitSelectDiscipline.value);
-        const test1 = test1Select.value; // Get string value
-        const test2 = test2Select.value; // Get string value
-        const eval1 = evaluation1Select.value; // Get string value
+        const test1 = test1Select.value;
+        const test2 = test2Select.value;
+        const eval1 = evaluation1Select.value;
         const finalGrade = finalGradeSelect.value;
         const observation = observationInput.value.trim();
 
-        // Validate if all required fields are filled and numerical inputs are not empty strings
         if (!selectedClass || !studentId || !disciplineName || !unitNumber || test1 === '' || test2 === '' || eval1 === '' || !finalGrade) {
             alert('Por favor, preencha a Turma, o Aluno e preencha todos os campos da disciplina (Notas de Teste, Avaliação, Menção Final e Unidade).');
             return;
         }
-        // Parse numerical values after validation (replace comma with dot)
         const parsedTest1 = parseFloat(test1.replace(',', '.'));
         const parsedTest2 = parseFloat(test2.replace(',', '.'));
         const parsedEval1 = parseFloat(eval1.replace(',', '.'));
@@ -2198,12 +2188,12 @@
             const existingDiscipline = student.disciplines.find(d => d.discipline === disciplineName && d.unit === unitNumber);
             if (existingDiscipline) { alert(`A disciplina "${disciplineName}" para a Unidade ${unitNumber} já existe para este aluno.`); return; }
 
-            let situation = 'Pendente'; // Default
+            let situation = 'Pendente';
             if (finalGrade === 'Aprovado') situation = 'Aprovado';
             else if (finalGrade === 'Reprovado') situation = 'Reprovado';
-            else if (finalGrade === 'Recuperacao') situation = 'Recuperação'; // New situation for Recuperacao
+            else if (finalGrade === 'Recuperacao') situation = 'Recuperação';
 
-            const media = ((parsedTest1 + parsedTest2 + parsedEval1) / 3).toFixed(2); // Calculate media
+            const media = ((parsedTest1 + parsedTest2 + parsedEval1) / 3).toFixed(2);
 
             const newDiscipline = {
                 discipline: disciplineName,
@@ -2211,27 +2201,31 @@
                 test1: parsedTest1,
                 test2: parsedTest2,
                 eval1: parsedEval1,
-                media: media, // Store calculated media
+                media: media,
                 finalGrade: finalGrade,
                 situation: situation,
                 observation: observation
             };
             student.disciplines.push(newDiscipline);
-            disciplineClassSelect.value = '';
-            populateStudentSelectForDiscipline();
-            disciplineSelect.value = '';
-            unitSelectDiscipline.value = '';
-            test1Select.value = ''; // Reset to empty string
-            test2Select.value = ''; // Reset to empty string
-            evaluation1Select.value = ''; // Reset to empty string
-            finalGradeSelect.value = '';
-            observationInput.value = '';
-            document.getElementById('mediaDisplay').textContent = '-'; // Reset media display
-            saveData(); // Save data after adding a discipline
-            renderStudentTable(students);
-            if (currentUser && currentUser.role === 'professor') loadProfessorTable();
-            if (currentUser && currentUser.role === 'aluno' && currentUser.studentId === student.id) showStudentBulletin();
-            alert('Disciplina adicionada com sucesso!');
+
+            try {
+                await updateDoc(doc(studentsCollectionRef, student.id), { disciplines: student.disciplines });
+                // console.log("Discipline added to student in Firestore.");
+                disciplineClassSelect.value = '';
+                populateStudentSelectForDiscipline();
+                disciplineSelect.value = '';
+                unitSelectDiscipline.value = '';
+                test1Select.value = '';
+                test2Select.value = '';
+                evaluation1Select.value = '';
+                finalGradeSelect.value = '';
+                observationInput.value = '';
+                document.getElementById('mediaDisplay').textContent = '-';
+                alert('Disciplina adicionada com sucesso!');
+            } catch (error) {
+                console.error("Error adding discipline to student in Firestore:", error);
+                alert("Erro ao adicionar disciplina. Tente novamente.");
+            }
         } else { alert('Aluno não encontrado.'); }
     }
 
@@ -2240,13 +2234,13 @@
         const defaultOption = document.createElement('option'); defaultOption.value = ""; defaultOption.textContent = className ? "Carregando alunos..." : "Selecione a Turma Primeiro";
         studentSelect.appendChild(defaultOption); studentSelect.disabled = true;
         setTimeout(() => {
-            const studentsToDisplay = students.filter(student => student.class === className); // Filter by class
-            studentSelect.innerHTML = ''; // Clear options again after filter
+            const studentsToDisplay = students.filter(student => student.class === className);
+            studentSelect.innerHTML = '';
 
             const fragment = document.createDocumentFragment();
             if (studentsToDisplay.length > 0) {
                 const selectStudentOption = document.createElement('option'); selectStudentOption.value = ""; selectStudentOption.textContent = "Selecione o Aluno"; fragment.appendChild(selectStudentOption);
-                studentsToDisplay.forEach(student => { const option = document.createElement('option'); option.value = student.id; option.textContent = `${student.name} (${student.matricula})`; fragment.appendChild(option); }); // Display matricula in student select
+                studentsToDisplay.forEach(student => { const option = document.createElement('option'); option.value = student.id; option.textContent = `${student.name} (${student.matricula})`; fragment.appendChild(option); });
                 studentSelect.disabled = false;
             } else {
                 const noStudentsOption = document.createElement('option'); noStudentsOption.value = ""; noStudentsOption.textContent = "Nenhum aluno encontrado para a Turma selecionada"; fragment.appendChild(noStudentsOption); studentSelect.disabled = true;
@@ -2264,7 +2258,7 @@
             const fragment = document.createDocumentFragment();
             if (studentsToDisplay.length > 0) {
                 const selectStudentOption = document.createElement('option'); selectStudentOption.value = ""; selectStudentOption.textContent = "Selecione o Aluno"; fragment.appendChild(selectStudentOption);
-                studentsToDisplay.forEach(student => { const option = document.createElement('option'); option.value = student.id; option.textContent = `${student.name} (${student.matricula}) - ${student.unit}`; fragment.appendChild(option); }); // Display matricula
+                studentsToDisplay.forEach(student => { const option = document.createElement('option'); option.value = student.id; option.textContent = `${student.name} (${student.matricula}) - ${student.unit}`; fragment.appendChild(option); });
                 studentSelect.disabled = false;
             } else {
                 const noStudentsOption = document.createElement('option'); noStudentsOption.value = ""; noStudentsOption.textContent = "Selecione a Turma Primeiro"; fragment.appendChild(noStudentsOption); studentSelect.disabled = true;
@@ -2304,7 +2298,6 @@
         }
     }
 
-    // Function to populate the Discipline Select
     function populateDisciplineSelect(selectElement) {
         selectElement.innerHTML = '<option value="">Selecione a Disciplina</option>';
         allDisciplines.forEach(discipline => {
@@ -2316,7 +2309,6 @@
     }
 
     function printAllReports() {
-        // This function will now print ALL students from ALL classes, respecting unit and report type filters
         const selectedUnits = Array.from(document.querySelectorAll('#printControls .unitCheckbox:checked')).map(cb => parseInt(cb.value));
         const reportType = document.querySelector('#printControls input[name="reportType"]:checked').value;
 
@@ -2327,7 +2319,7 @@
 
         let allBulletinsHTML = '';
         students.forEach(student => {
-            allBulletinsHTML += generateBulletinHTML(student, selectedUnits, reportType, true); // Pass true to include notes
+            allBulletinsHTML += generateBulletinHTML(student, selectedUnits, reportType, true);
         });
 
         if (allBulletinsHTML === '') {
@@ -2336,7 +2328,6 @@
         }
         openPrintWindow(allBulletinsHTML, "Boletins de Todos os Alunos");
     }
-
 
     function printStudentReport() {
         const printClassSelect = document.getElementById('printClassSelect');
@@ -2351,11 +2342,10 @@
         const student = students.find(s => s.id === studentId);
         if (!student) { alert('Aluno não encontrado para impressão.'); return; }
 
-        const bulletinHTML = generateBulletinHTML(student, selectedUnits, reportType, true); // Pass true to include notes
+        const bulletinHTML = generateBulletinHTML(student, selectedUnits, reportType, true);
         openPrintWindow(bulletinHTML, `Boletim de ${student.name}`);
     }
 
-    // NOVA FUNÇÃO para imprimir boletins da turma
     function printClassReports() {
         const printClassSelect = document.getElementById('printClassSelect');
         const selectedClass = printClassSelect.value;
@@ -2380,7 +2370,7 @@
 
         let classBulletinsHTML = '';
         studentsInClass.forEach(student => {
-            classBulletinsHTML += generateBulletinHTML(student, selectedUnits, reportType, true); // Pass true to include notes
+            classBulletinsHTML += generateBulletinHTML(student, selectedUnits, reportType, true);
         });
 
         if (classBulletinsHTML === '') {
@@ -2390,30 +2380,26 @@
         openPrintWindow(classBulletinsHTML, `Boletins da Turma ${selectedClass}`);
     }
 
-
-    // MODIFICADA: generateBulletinHTML para incluir anotações
     function generateBulletinHTML(student, unitsToInclude, reportType = 'full', includeProfessorNotes = false) {
-        let bulletinHTML = `<div class="student-report"><div class="bulletin-header"><p class="line1"><strong>Escola Academia Primeiros Passos</strong> - 2025</p><p class="line2">Boletim Escolar - APP</p><p class="line3"><strong>Aluno:</strong> ${student.name} (${student.matricula}) - <strong>Turma:</strong> ${student.class} - <strong>Turno:</strong> ${student.unit} - <strong>Curso:</strong> ${student.course}</p></div><table class="bulletin-table"><thead><tr><th>Disciplina</th><th>Unidade</th>${reportType === 'full' ? '<th>Teste 1</th><th>Teste 2</th><th>Avaliação</th><th>Média</th>' : ''}<th>Menção Final</th><th>Situação</th><th>Observações</th></tr></thead><tbody>`; // Updated table header: added Matrícula and Média
+        let bulletinHTML = `<div class="student-report"><div class="bulletin-header"><p class="line1"><strong>Escola Academia Primeiros Passos</strong> - 2025</p><p class="line2">Boletim Escolar - APP</p><p class="line3"><strong>Aluno:</strong> ${student.name} (${student.matricula}) - <strong>Turma:</strong> ${student.class} - <strong>Turno:</strong> ${student.unit} - <strong>Curso:</strong> ${student.course}</p></div><table class="bulletin-table"><thead><tr><th>Disciplina</th><th>Unidade</th>${reportType === 'full' ? '<th>Teste 1</th><th>Teste 2</th><th>Avaliação</th><th>Média</th>' : ''}<th>Menção Final</th><th>Situação</th><th>Observações</th></tr></thead><tbody>`;
         const disciplinesToPrint = student.disciplines.filter(d => unitsToInclude.includes(d.unit)).sort((a, b) => { if (a.unit !== b.unit) return a.unit - b.unit; return a.discipline.localeCompare(b.discipline); });
         if (disciplinesToPrint.length === 0) {
-            const colspan = reportType === 'full' ? 9 : 5; // Updated colspan: 9 for full (Disciplina, Unidade, Teste 1, Teste 2, Avaliação, Média, Menção Final, Situação, Observações = 9), 5 for summary (Disciplina, Unidade, Menção Final, Situação, Observações = 5)
+            const colspan = reportType === 'full' ? 9 : 5;
             bulletinHTML += `<tr><td colspan="${colspan}">Nenhuma disciplina ou nota encontrada para as unidades selecionadas.</td></tr>`;
         } else {
             disciplinesToPrint.forEach(discipline => {
-                const test1Display = discipline.test1 !== undefined && discipline.test1 !== null ? String(discipline.test1).replace('.', ',') : '-'; // Display with comma
-                const test2Display = discipline.test2 !== undefined && discipline.test2 !== null ? String(discipline.test2).replace('.', ',') : '-'; // Display with comma
-                const eval1Display = discipline.eval1 !== undefined && discipline.eval1 !== null ? String(discipline.eval1).replace('.', ',') : '-'; // Display with comma
-                const mediaDisplay = discipline.media !== undefined && discipline.media !== null ? parseFloat(discipline.media).toFixed(2).replace('.', ',') : '-'; // Display media rounded with comma
+                const test1Display = discipline.test1 !== undefined && discipline.test1 !== null ? String(discipline.test1).replace('.', ',') : '-';
+                const test2Display = discipline.test2 !== undefined && discipline.test2 !== null ? String(discipline.test2).replace('.', ',') : '-';
+                const eval1Display = discipline.eval1 !== undefined && discipline.eval1 !== null ? String(discipline.eval1).replace('.', ',') : '-';
+                const mediaDisplay = discipline.media !== undefined && discipline.media !== null ? parseFloat(discipline.media).toFixed(2).replace('.', ',') : '-';
 
                 bulletinHTML += `<tr><td>${discipline.discipline}</td><td>${discipline.unit}</td>${reportType === 'full' ? `<td>${test1Display}</td><td>${test2Display}</td><td>${eval1Display}</td><td>${mediaDisplay}</td>` : ''}<td>${discipline.finalGrade || '-'}</td><td>${discipline.situation || '-'}</td><td>${discipline.observation || ''}</td></tr>`;
             });
         }
         bulletinHTML += `</tbody></table>`;
 
-        // NEW: Add professor notes to the print output if requested
         if (includeProfessorNotes && student.professorNotes && student.professorNotes.length > 0) {
             const notesForPrint = student.professorNotes.filter(note => unitsToInclude.includes(note.unit)).sort((a, b) => {
-                // Sort by date (descending), then by discipline, then by professor name
                 const dateA = new Date(a.date);
                 const dateB = new Date(b.date);
                 if (dateA.getTime() !== dateB.getTime()) return dateB.getTime() - dateA.getTime();
@@ -2431,17 +2417,16 @@
                         <p><strong>Anotação:</strong> ${note.content}</p>
                         <span class="note-meta">Feita por: ${note.professorName} em ${new Date(note.date).toLocaleDateString()}</span>
                     `;
-                    bulletinHTML += noteItem.outerHTML; // Append the HTML of the created element
+                    bulletinHTML += noteItem.outerHTML;
                 });
                 bulletinHTML += `</div>`;
             }
         }
 
-        bulletinHTML += `</div>`; // Close student-report div
+        bulletinHTML += `</div>`;
         return bulletinHTML;
     }
 
-    // Helper para abrir janela de impressão
     function openPrintWindow(contentHTML, title) {
         const printWindow = window.open('', '_blank');
         printWindow.document.open();
@@ -2462,7 +2447,6 @@
                     .bulletin-table th { background-color: yellow !important; color: #A52A2A !important; font-weight: bold; }
                     .bulletin-table td:first-child { text-align: left; } .bulletin-table td:last-child { text-align: left; }
                     @page { size: A4; margin: 1.5cm; }
-                    /* New print styles for professor notes */
                     .professor-notes-print { margin-top: 25px; padding-top: 15px; border-top: 1px solid yellow; }
                     .professor-notes-print h4 { font-size: 12pt; margin-bottom: 10px; color: #A52A2A; }
                     .professor-note-item { border: 1px solid yellow; padding: 8px; margin-bottom: 8px; background-color: white; page-break-inside: avoid; }
@@ -2475,8 +2459,6 @@
         printWindow.print();
     }
 
-
-    // Modified showAddProfessorForm to populate the new assignment structure UI
     function showAddProfessorForm() {
         populateProfessorAssignmentCheckboxes(document.getElementById('newProfessorAssignments'));
         document.getElementById('addProfessorModal').classList.remove('hidden');
@@ -2487,19 +2469,19 @@
         document.getElementById('newProfessorNameInput').value = '';
         document.getElementById('newProfessorUsernameInput').value = '';
         document.getElementById('newProfessorPasswordInput').value = '';
-        document.getElementById('newProfessorAssignments').innerHTML = ''; // Clear the assignment checkboxes
+        document.getElementById('newProfessorAssignments').innerHTML = '';
     }
 
-    // Modified saveProfessor to capture the new assignment structure
-    function saveProfessor() {
+    async function saveProfessor() {
         const name = document.getElementById('newProfessorNameInput').value.trim();
         const username = document.getElementById('newProfessorUsernameInput').value.trim();
         const password = document.getElementById('newProfessorPasswordInput').value;
 
         if (!name || !username || !password) { alert('Por favor, preencha Nome, Usuário e Senha para o professor.'); return; }
-        if (users.some(user => user.username === username)) { alert('Nome de usuário já existe. Por favor, escolha outro.'); return; }
+        const q = query(usersCollectionRef, where("username", "==", username));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) { alert('Nome de usuário já existe. Por favor, escolha outro.'); return; }
 
-        // Capture assignments from the new UI structure
         const assignments = [];
         document.querySelectorAll('#newProfessorAssignments .discipline-assignment').forEach(disciplineDiv => {
             const discipline = disciplineDiv.dataset.discipline;
@@ -2509,41 +2491,60 @@
             }
         });
 
-        users.push({ username: username, password: password, role: 'professor', name: name, assignments: assignments });
-        saveData(); // Save data after adding a professor
-        closeAddProfessorModal();
-        renderUsersTable(users);
-        alert('Professor adicionado com sucesso!');
+        const newProfessor = { username: username, password: password, role: 'professor', name: name, assignments: assignments };
+        try {
+            await setDoc(doc(usersCollectionRef, username), newProfessor);
+            // console.log("Professor added to Firestore.");
+            closeAddProfessorModal();
+            alert('Professor adicionado com sucesso!');
+        } catch (error) {
+            console.error("Error adding professor to Firestore:", error);
+            alert("Erro ao adicionar professor. Tente novamente.");
+        }
     }
 
     function showAddCoordenadorForm() { document.getElementById('addCoordinatorModal').classList.remove('hidden'); }
     function closeAddCoordenadorModal() { document.getElementById('addCoordinatorModal').classList.add('hidden'); document.getElementById('newCoordinatorNameInput').value = ''; document.getElementById('newCoordinatorUsernameInput').value = ''; document.getElementById('newCoordinatorPasswordInput').value = ''; }
-    function saveCoordinator() {
+    async function saveCoordinator() {
         const name = document.getElementById('newCoordinatorNameInput').value.trim(); const username = document.getElementById('newCoordinatorUsernameInput').value.trim(); const password = document.getElementById('newCoordinatorPasswordInput').value;
         if (!name || !username || !password) { alert('Por favor, preencha Nome, Usuário e Senha para o coordenador.'); return; }
-        if (users.some(user => user.username === username)) { alert('Nome de usuário já existe. Por favor, escolha outro.'); return; }
-        users.push({ username: username, password: password, role: 'coordenador', name: name, assignments: [] }); // Coordinators have empty assignments
-        saveData(); // Save data after adding a coordinator
-        closeAddCoordenadorModal(); renderUsersTable(users); alert('Coordenador adicionado com sucesso!');
+        const q = query(usersCollectionRef, where("username", "==", username));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) { alert('Nome de usuário já existe. Por favor, escolha outro.'); return; }
+        const newCoordinator = { username: username, password: password, role: 'coordenador', name: name, assignments: [] };
+        try {
+            await setDoc(doc(usersCollectionRef, username), newCoordinator);
+            // console.log("Coordinator added to Firestore.");
+            closeAddCoordenadorModal();
+            alert('Coordenador adicionado com sucesso!');
+        } catch (error) {
+            console.error("Error adding coordinator to Firestore:", error);
+            alert("Erro ao adicionar coordenador. Tente novamente.");
+        }
     }
-    function showManageUsersSection() { showSection(manageUsersSection); renderUsersTable(users); }
 
-    // Modified editUser to populate the new assignment structure UI
-    function editUser(username) {
-        const user = users.find(u => u.username === username); if (!user) { alert('Usuário não encontrado para edição.'); return; }
-        document.getElementById('editUserModalTitle').textContent = `Editar Usuário: ${user.name}`; document.getElementById('editUserOriginalUsername').value = user.username; document.getElementById('editUserRole').value = user.role;
-        document.getElementById('editUserNameInput').value = user.name; document.getElementById('editUserUsernameInput').value = user.username; document.getElementById('editUserPasswordInput').value = '';
+    async function editUser(username) {
+        const userDocRef = doc(usersCollectionRef, username);
+        const userDocSnap = await getDoc(userDocRef);
+        if (!userDocSnap.exists()) { alert('Usuário não encontrado para edição.'); return; }
+        const user = userDocSnap.data();
+
+        document.getElementById('editUserModalTitle').textContent = `Editar Usuário: ${user.name}`;
+        document.getElementById('editUserOriginalUsername').value = user.username;
+        document.getElementById('editUserRole').value = user.role;
+        document.getElementById('editUserNameInput').value = user.name;
+        document.getElementById('editUserUsernameInput').value = user.username;
+        document.getElementById('editUserPasswordInput').value = '';
 
         const professorAssignmentsDiv = document.getElementById('editProfessorAssignments');
         if (user.role === 'professor') {
             professorAssignmentsDiv.classList.remove('hidden');
-            populateProfessorAssignmentCheckboxes(professorAssignmentsDiv, user.assignments); // Populate with existing assignments
+            populateProfessorAssignmentCheckboxes(professorAssignmentsDiv, user.assignments);
         } else {
             professorAssignmentsDiv.classList.add('hidden');
-             professorAssignmentsDiv.innerHTML = ''; // Clear assignments if not a professor
+             professorAssignmentsDiv.innerHTML = '';
         }
 
-         // Hide assignments for student users in the edit modal (redundant with above but keeps logic clear)
         if (user.role === 'aluno') { professorAssignmentsDiv.classList.add('hidden'); professorAssignmentsDiv.innerHTML = ''; }
 
         document.getElementById('editUserModal').classList.remove('hidden');
@@ -2556,11 +2557,10 @@
         document.getElementById('editUserNameInput').value = '';
         document.getElementById('editUserUsernameInput').value = '';
         document.getElementById('editUserPasswordInput').value = '';
-        document.getElementById('editProfessorAssignments').innerHTML = ''; // Clear assignment checkboxes
+        document.getElementById('editProfessorAssignments').innerHTML = '';
     }
 
-    // Modified updateUser to save the new assignment structure
-    function updateUser() {
+    async function updateUser() {
         const originalUsername = document.getElementById('editUserOriginalUsername').value;
         const userRole = document.getElementById('editUserRole').value;
         const newName = document.getElementById('editUserNameInput').value.trim();
@@ -2568,13 +2568,16 @@
         const newPassword = document.getElementById('editUserPasswordInput').value;
 
         if (!newName || !newUsername) { alert('Nome e Usuário não podem ser vazios.'); return; }
-        if (newUsername !== originalUsername && users.some(user => user.username === newUsername)) { alert('Nome de usuário já existe. Por favor, escolha outro.'); return; }
+        if (newUsername !== originalUsername) {
+            const q = query(usersCollectionRef, where("username", "==", newUsername));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) { alert('Nome de usuário já existe. Por favor, escolha outro.'); return; }
+        }
 
-        const userIndex = users.findIndex(u => u.username === originalUsername); if (userIndex === -1) { alert('Erro: Usuário original não encontrado.'); return; }
+        const userDocRef = doc(usersCollectionRef, originalUsername);
+        const updateData = { name: newName, username: newUsername };
+        if (newPassword) updateData.password = newPassword;
 
-        users[userIndex].name = newName; users[userIndex].username = newUsername; if (newPassword) users[userIndex].password = newPassword;
-
-        // Update assignments based on the new UI structure if the user is a professor
         if (userRole === 'professor') {
             const updatedAssignments = [];
             document.querySelectorAll('#editProfessorAssignments .discipline-assignment').forEach(disciplineDiv => {
@@ -2584,215 +2587,177 @@
                     updatedAssignments.push({ discipline: discipline, classes: selectedClasses });
                  }
             });
-             users[userIndex].assignments = updatedAssignments;
+             updateData.assignments = updatedAssignments;
         }
-         // For other roles, assignments remain empty or unchanged
 
-        saveData(); // Save data after updating a user
-        closeEditUserModal();
-        renderUsersTable(users);
-
-        if (currentUser && currentUser.username === originalUsername) {
-            currentUser = users[userIndex];
-            // Update studentId link if username changed for an aluno user
-            if (currentUser.role === 'aluno') {
-                 // Try to relink student to the new username (matricula)
-                const student = students.find(s => s.matricula && s.matricula.trim().toLowerCase() === currentUser.username.trim().toLowerCase());
-                 if (student) {
-                    currentUser.studentId = student.id;
-                 } else {
-                     console.warn('Could not relink student data after username update for user:', currentUser.username);
-                      // Decide how to handle this - maybe revert the username change or show an error
-                 }
-                 showStudentBulletin(); // Refresh bulletin for the student
-            } else if (currentUser.role === 'admin' || currentUser.role === 'coordenador') {
-                showStudentManagementSection(); // Refresh student management for admin/coordinator
-            } else if (currentUser.role === 'professor') {
-                 showProfessorSection(currentUser); // Refresh professor section for professor
+        try {
+            await updateDoc(userDocRef, updateData);
+            // If username changed, delete old doc and create new one with new username as ID
+            if (newUsername !== originalUsername) {
+                // Fetch the current user data before updating and deleting to ensure all fields are carried over.
+                const currentUserDoc = await getDoc(userDocRef);
+                if (currentUserDoc.exists()) {
+                    const currentData = currentUserDoc.data();
+                    await setDoc(doc(usersCollectionRef, newUsername), { ...currentData, ...updateData }); // Create new doc with merged data
+                    await deleteDoc(userDocRef); // Delete old doc
+                }
             }
+            // console.log("User updated in Firestore.");
+            closeEditUserModal();
+            alert('Usuário atualizado com sucesso!');
+            // onSnapshot will handle UI refresh
+        } catch (error) {
+            console.error("Error updating user in Firestore:", error);
+            alert("Erro ao atualizar usuário. Tente novamente.");
         }
-        alert('Usuário atualizado com sucesso!');
     }
 
-    function deleteUser(username) {
+    async function deleteUser(username) {
         if (username === 'administrador') { alert('Não é possível excluir o usuário administrador principal.'); return; }
         if (currentUser && currentUser.username === username) { alert('Você não pode excluir seu próprio usuário.'); return; }
-        // Removed the explicit check preventing deletion of 'aluno' users
+
         if (confirm(`Tem certeza que deseja excluir o usuário "${username}"? Esta ação não pode ser desfeita."`)) {
-            const initialUserCount = users.length; users = users.filter(user => user.username !== username);
-            if (users.length < initialUserCount) {
-                 saveData(); // Save data after deleting a user
-                 renderUsersTable(users);
-                 alert('Usuário excluído com sucesso.');
-                 // If the deleted user was the current user, log out
-                 if (currentUser && currentUser.username === username) {
-                     logout();
-                 }
-             } else { alert('Erro ao excluir usuário: Usuário não encontrado.'); }
+            try {
+                await deleteDoc(doc(usersCollectionRef, username));
+                // console.log("User deleted from Firestore.");
+                alert('Usuário excluído com sucesso.');
+                // onSnapshot will handle UI refresh and potential logout
+            } catch (error) {
+                console.error("Error deleting user from Firestore:", error);
+                alert("Erro ao excluir usuário. Tente novamente.");
+            }
         }
     }
+
     function searchStudent() {
         const searchTerm = document.getElementById('searchName').value.toLowerCase();
         if (searchTerm.trim() === '') renderStudentTable(students);
-        else renderStudentTable(students.filter(student => student.name.toLowerCase().includes(searchTerm) || (student.matricula && student.matricula.toLowerCase().includes(searchTerm)))); // Search by matricula too
+        else renderStudentTable(students.filter(student => student.name.toLowerCase().includes(searchTerm) || (student.matricula && student.matricula.toLowerCase().includes(searchTerm))));
     }
+
     function exportData() {
+         // Exporting from local `students` and `users` arrays, which are synced with Firestore
          const data = { students: students, users: users };
-         const dataStr = JSON.stringify(data, null, 2); // Pretty print JSON
+         const dataStr = JSON.stringify(data, null, 2);
          const blob = new Blob([dataStr], { type: 'application/json' });
          const url = URL.createObjectURL(blob);
          const a = document.createElement('a');
          a.href = url;
-         a.download = 'escola_academia_primeiros_passos_boletim_backup_' + new Date().toISOString().slice(0,10) + '.json'; // Filename with date
-         document.body.appendChild(a); // Required for Firefox
+         a.download = 'escola_academia_primeiros_passos_boletim_backup_' + new Date().toISOString().slice(0,10) + '.json';
+         document.body.appendChild(a);
          a.click();
          document.body.removeChild(a);
-         URL.revokeObjectURL(url); // Clean up
+         URL.revokeObjectURL(url);
          alert('Dados exportados com sucesso!');
     }
 
-    function importData() {
-         const fileInput = document.getElementById('importFile');
-         const file = fileInput.files[0];
-         const importStatus = document.getElementById('importStatus');
-         const performImportButton = document.getElementById('performImportButton');
+    async function importData() {
+        const fileInput = document.getElementById('importFile');
+        const file = fileInput.files[0];
+        const importStatus = document.getElementById('importStatus');
+        const performImportButton = document.getElementById('performImportButton');
 
-         importStatus.textContent = ''; // Clear previous status
+        importStatus.textContent = '';
 
-         if (!file) {
-             importStatus.textContent = 'Por favor, selecione um arquivo para importar.';
-             return;
-         }
+        if (!file) {
+            importStatus.textContent = 'Por favor, selecione um arquivo para importar.';
+            return;
+        }
 
-         const reader = new FileReader();
-         reader.onload = function(event) {
-             try {
-                 const importedData = JSON.parse(event.target.result);
-                 if (importedData.students && importedData.users) {
-                     // Basic validation: check if arrays exist
-                     if (Array.isArray(importedData.students) && Array.isArray(importedData.users)) {
-                          // More detailed validation could be added here (e.g., check for required fields in objects)
+        const reader = new FileReader();
+        reader.onload = async function(event) {
+            try {
+                const importedData = JSON.parse(event.target.result);
+                if (importedData.students && importedData.users) {
+                    if (Array.isArray(importedData.students) && Array.isArray(importedData.users)) {
+                        const importedAdmin = importedData.users.find(user => user.username === 'administrador' && user.role === 'admin');
 
-                          // Check if the imported data contains an admin user
-                          const importedAdmin = importedData.users.find(user => user.username === 'administrador' && user.role === 'admin');
+                        if (!importedAdmin) {
+                            importStatus.textContent = 'Erro de importação: O arquivo não contém um usuário administrador válido.';
+                            performImportButton.disabled = true;
+                            document.getElementById('importFileName').textContent = 'Nenhum arquivo selecionado.';
+                            fileInput.value = '';
+                            return;
+                        }
 
-                          if (!importedAdmin) {
-                             importStatus.textContent = 'Erro de importação: O arquivo não contém um usuário administrador válido.';
-                             performImportButton.disabled = true; // Disable import again on error
-                             document.getElementById('importFileName').textContent = 'Nenhum arquivo selecionado.';
-                             fileInput.value = ''; // Clear file input
-                             return;
-                          }
+                        // Import users
+                        for (const user of importedData.users) {
+                            const userToSave = { ...user };
+                            if (user.username === 'administrador') {
+                                // Keep existing admin password, but use imported properties
+                                const existingAdminDoc = await getDoc(doc(usersCollectionRef, 'administrador'));
+                                if (existingAdminDoc.exists()) {
+                                    userToSave.password = existingAdminDoc.data().password;
+                                }
+                            }
+                            if (!Array.isArray(userToSave.assignments)) userToSave.assignments = [];
+                            try {
+                                await setDoc(doc(usersCollectionRef, userToSave.username), userToSave);
+                            } catch (e) {
+                                console.error(`Error importing user ${userToSave.username}:`, e);
+                            }
+                        }
 
-                          // Keep the existing admin password for security (don't overwrite with imported password)
-                          const existingAdmin = users.find(user => user.username === 'administrador' && user.role === 'admin');
-                          if (existingAdmin) {
-                              // Find the imported admin user and update its password to the existing one
-                              const importedAdminUser = importedData.users.find(user => user.username === 'administrador' && user.role === 'admin');
-                              if(importedAdminUser) {
-                                 importedAdminUser.password = existingAdmin.password;
-                                 // Also ensure its assignments are an array if missing
-                                 if (!Array.isArray(importedAdminUser.assignments)) importedAdminUser.assignments = [];
-                              }
-                          } else {
-                              // If somehow the existing admin is missing, add the imported one but issue a warning
-                              alert('Aviso: O usuário administrador existente foi substituído pelo do arquivo importado. A senha padrão será usada.');
-                               if (!Array.isArray(importedData.users[0].assignments)) importedData.users[0].assignments = []; // Ensure assignments is array for imported admin
-                          }
+                        // Import students
+                        for (const student of importedData.students) {
+                            const studentToSave = { ...student };
+                            if (!Array.isArray(studentToSave.professorNotes)) studentToSave.professorNotes = [];
+                            if (!studentToSave.matricula) studentToSave.matricula = '';
+                            try {
+                                await setDoc(doc(studentsCollectionRef, student.id), studentToSave);
+                            } catch (e) {
+                                console.error(`Error importing student ${student.id}:`, e);
+                            }
+                        }
 
-
-                          students = importedData.students;
-                          users = importedData.users;
-
-                          // Ensure all imported users have an assignments array if they are professors or if the field is missing
-                           students = students.map(s => { // NEW: Ensure professorNotes and matricula for students
-                               if (!Array.isArray(s.professorNotes)) s.professorNotes = [];
-                               if (!s.matricula) s.matricula = ''; // Ensure matricula for existing students
-                               return s;
-                           });
-
-                           users = users.map(user => {
-                               if (user.role === 'professor' && !Array.isArray(user.assignments)) {
-                                   user.assignments = []; // Default to empty array if missing for professor
-                               } else if (!Array.isArray(user.assignments)) {
-                                   user.assignments = []; // Ensure assignments is an array for all users
-                               }
-                               return user;
-                           });
-
-                          saveData(); // Save the imported data
-                          importStatus.textContent = 'Dados importados com sucesso!';
-                          // Refresh UI based on the current user and imported data
-                          if (currentUser) {
-                               const updatedCurrentUser = users.find(user => user.username === currentUser.username && user.role === currentUser.role);
-                               if (updatedCurrentUser) {
-                                   currentUser = updatedCurrentUser; // Update currentUser reference
-                                    if (currentUser.role === 'aluno') {
-                                         // Try to relink student to the new username (matricula)
-                                        const student = students.find(s => s.matricula && s.matricula.trim().toLowerCase() === currentUser.username.trim().toLowerCase());
-                                         if (student) {
-                                            currentUser.studentId = student.id;
-                                         } else {
-                                             console.warn('Could not relink student data after import for user:', currentUser.username);
-                                              // Decide how to handle this - maybe show a specific message or log out
-                                         }
-                                         showStudentBulletin(); // Refresh bulletin for the student
-                                    } else if (currentUser.role === 'admin' || currentUser.role === 'coordenador') {
-                                         showStudentManagementSection(); // Refresh student management for admin/coordinator
-                                    } else if (currentUser.role === 'professor') {
-                                         showProfessorSection(currentUser); // Refresh professor section for professor
-                                    }
-                               } else {
-                                    // Current user no longer exists in imported data, force logout
-                                    alert('Seu usuário não foi encontrado nos dados importados. Você será desconectado.');
-                                    logout();
-                               }
-                          } else {
-                                // If no user was logged in, just render the tables with new data
-                                 renderStudentTable(students);
-                                 renderUsersTable(users);
-                          }
-
-                     } else {
-                          importStatus.textContent = 'Erro de importação: Formato de dados inválido.';
-                           performImportButton.disabled = true; // Disable import again on error
-                           document.getElementById('importFileName').textContent = 'Nenhum arquivo selecionado.';
-                           fileInput.value = ''; // Clear file input
-                     }
-                 } else {
-                     importStatus.textContent = 'Erro de importação: O arquivo JSON não contém as chaves "students" e "users".';
-                      performImportButton.disabled = true; // Disable import again on error
-                      document.getElementById('importFileName').textContent = 'Nenhum arquivo selecionado.';
-                      fileInput.value = ''; // Clear file input
-                 }
-             } catch (e) {
-                 importStatus.textContent = 'Erro ao processar arquivo JSON: ' + e.message;
-                  performImportButton.disabled = true; // Disable import again on error
-                  document.getElementById('importFileName').textContent = 'Nenhum arquivo selecionado.';
-                  fileInput.value = ''; // Clear file input
-             } finally {
-                 // Clear the file input regardless of success or failure for security/cleanup
-                 fileInput.value = '';
-             }
-         };
-         reader.readAsText(file); // Read the file as text
-         performImportButton.disabled = true; // Disable button after starting import
+                        importStatus.textContent = 'Dados importados com sucesso!';
+                        // onSnapshot will handle UI refresh
+                    } else {
+                        importStatus.textContent = 'Erro de importação: Formato de dados inválido.';
+                        performImportButton.disabled = true;
+                        document.getElementById('importFileName').textContent = 'Nenhum arquivo selecionado.';
+                    }
+                } else {
+                    importStatus.textContent = 'Erro de importação: O arquivo JSON não contém as chaves "students" e "users".';
+                    performImportButton.disabled = true;
+                    document.getElementById('importFileName').textContent = 'Nenhum arquivo selecionado.';
+                }
+            } catch (e) {
+                importStatus.textContent = 'Erro ao processar arquivo JSON: ' + e.message;
+                performImportButton.disabled = true;
+                document.getElementById('importFileName').textContent = 'Nenhum arquivo selecionado.';
+            } finally {
+                fileInput.value = '';
+            }
+        };
+        reader.readAsText(file);
+        performImportButton.disabled = true;
     }
 
-    function deleteStudentDiscipline(event) {
-        const button = event.target; const studentId = button.dataset.studentId; const disciplineName = button.dataset.disciplineName; const unitNumber = parseInt(button.dataset.unitNumber);
-        const student = students.find(s => s.id === studentId); if (!student) { alert('Erro: Aluno não encontrado para exclusão da disciplina.'); return; }
+    async function deleteStudentDiscipline(event) {
+        const button = event.target;
+        const studentId = button.dataset.studentId;
+        const disciplineName = button.dataset.disciplineName;
+        const unitNumber = parseInt(button.dataset.unitNumber);
+
+        const student = students.find(s => s.id === studentId);
+        if (!student) { alert('Erro: Aluno não encontrado para exclusão da disciplina.'); return; }
         const disciplineIndex = student.disciplines.findIndex(d => d.discipline === disciplineName && d.unit === unitNumber);
         if (disciplineIndex === -1) { alert('Erro: Entrada de disciplina não encontrada para exclusão.'); return; }
+
         if (confirm(`Tem certeza que deseja excluir a disciplina "${disciplineName}" (Unidade ${unitNumber}) para o aluno "${student.name}"? Esta ação não pode ser desfeita."`)) {
-            student.disciplines.splice(disciplineIndex, 1);
-            saveData(); // Save data after deleting a discipline
-            renderStudentTable(students);
-            if (currentUser && currentUser.role === 'professor') loadProfessorTable();
-            if (currentUser && currentUser.role === 'aluno' && currentUser.studentId === student.id) showStudentBulletin();
-            alert('Disciplina excluída com sucesso.');
+            const updatedDisciplines = student.disciplines.filter((_, index) => index !== disciplineIndex);
+            try {
+                await updateDoc(doc(studentsCollectionRef, student.id), { disciplines: updatedDisciplines });
+                // console.log("Discipline deleted from student in Firestore.");
+                alert('Disciplina excluída com sucesso.');
+            } catch (error) {
+                console.error("Error deleting discipline from student in Firestore:", error);
+                alert("Erro ao excluir disciplina. Tente novamente.");
+            }
         }
     }
+
     function attachDeleteButtonListeners(tableSelector) {
         const table = document.querySelector(tableSelector); if (!table) return;
         const tableBody = table.querySelector('tbody');
@@ -2821,22 +2786,20 @@
         "1 ANO A Ensino Médio", "1 ANO B Ensino Médio", "1 ANO C Ensino Médio", "1 ANO D Ensino Médio",
         "2 ANO A Ensino Médio", "2 ANO B Ensino Médio", "2 ANO C Ensino Médio", "2 ANO D Ensino Médio",
         "3 ANO A Ensino Médio", "3 ANO B Ensino Médio", "3 ANO C Ensino Médio", "3 ANO D Ensino Médio"
-    ].sort(); // Sort alphabetically for display
+    ].sort();
 
      const allDisciplines = [
         "Alfabetização", "Português", "Matemática", "Ciências", "História", "Geografia", "Artes", "Educação Física", "Inglês",
         "Redação", "Gramática", "Literatura", "Filosofia", "Física", "Química", "Biologia", "Sociologia", "ED. Ambiental"
-     ].sort(); // Sort alphabetically for display
+     ].sort();
 
-
-     // New function to populate the discipline and class checkboxes for professor assignment
     function populateProfessorAssignmentCheckboxes(containerElement, assignedAssignments = []) {
-        containerElement.innerHTML = ''; // Clear previous content
+        containerElement.innerHTML = '';
 
         allDisciplines.forEach(discipline => {
             const disciplineDiv = document.createElement('div');
             disciplineDiv.classList.add('discipline-assignment');
-            disciplineDiv.dataset.discipline = discipline; // Store discipline name for easy access
+            disciplineDiv.dataset.discipline = discipline;
 
             const disciplineTitle = document.createElement('h4');
             disciplineTitle.textContent = discipline;
@@ -2850,7 +2813,6 @@
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.value = className;
-                // Check if this discipline in this class is already assigned
                 const isAssigned = assignedAssignments.some(assignment =>
                     assignment.discipline === discipline && assignment.classes.includes(className)
                 );
@@ -2868,26 +2830,37 @@
         });
     }
 
-
     document.getElementById('disciplineClassSelect').addEventListener('change', function() { populateStudentSelectForDiscipline(this.value); });
     document.getElementById('printClassSelect').addEventListener('change', function() { populateStudentPrintSelect(this.value); });
     function showAddAlunoUserForm() { const turmaSelect = document.getElementById('newAlunoTurmaSelect'); populateClassSelect(turmaSelect); document.getElementById('newAlunoNameInput').value = ''; document.getElementById('newAlunoMatriculaInput').value = ''; document.getElementById('newAlunoSenhaInput').value = ''; document.getElementById('newAlunoTurmaSelect').value = ''; document.getElementById('addAlunoUserModal').classList.remove('hidden'); }
-    function saveAlunoUser() {
+    async function saveAlunoUser() {
         const name = document.getElementById('newAlunoNameInput').value.trim(); const matricula = document.getElementById('newAlunoMatriculaInput').value.trim(); const senha = document.getElementById('newAlunoSenhaInput').value; const turma = document.getElementById('newAlunoTurmaSelect').value;
         if (!name || !matricula || !senha || !turma) { alert('Por favor, preencha Nome, Matrícula, Senha e selecione a Turma para o aluno.'); return; }
-        if (users.some(user => user.username === matricula)) { alert(`Nome de usuário (matrícula) "${matricula}" já existe. Por favor, use uma matrícula única.`); return; }
-        const correspondingStudents = students.filter(student => student.name.trim().toLowerCase() === name.trim().toLowerCase() && student.class === turma);
+        const qUser = query(usersCollectionRef, where("username", "==", matricula));
+        const queryUserSnapshot = await getDocs(qUser);
+        if (!queryUserSnapshot.empty) { alert(`Nome de usuário (matrícula) "${matricula}" já existe. Por favor, use uma matrícula única.`); return; }
+
+        const qStudent = query(studentsCollectionRef, where("name", "==", name), where("class", "==", turma));
+        const queryStudentSnapshot = await getDocs(qStudent);
+
         let studentIdToLink = null;
-        if (correspondingStudents.length === 0) { alert(`Erro: Nenhum aluno encontrado com o nome "${name}" na turma "${turma}". O usuário não foi criado.`); return; }
-        else if (correspondingStudents.length > 1) { alert(`Erro: Múltiplos alunos encontrados com o nome "${name}" na turma "${turma}". Não é possível criar o usuário.`); return; }
-        else { studentIdToLink = correspondingStudents[0].id; }
-        users.push({ username: matricula, password: senha, role: 'aluno', name: name, studentId: studentIdToLink, assignments: [] }); // Aluno users have empty assignments
-        saveData(); // Save data after adding an aluno user
-        closeAddAlunoUserModal(); renderUsersTable(users); alert('Usuário de aluno adicionado com sucesso!');
+        if (queryStudentSnapshot.empty) { alert(`Erro: Nenhum aluno encontrado com o nome "${name}" na turma "${turma}". O usuário não foi criado.`); return; }
+        else if (queryStudentSnapshot.docs.length > 1) { alert(`Erro: Múltiplos alunos encontrados com o nome "${name}" na turma "${turma}". Não é possível criar o usuário.`); return; }
+        else { studentIdToLink = queryStudentSnapshot.docs[0].id; }
+
+        const newAlunoUser = { username: matricula, password: senha, role: 'aluno', name: name, studentId: studentIdToLink, assignments: [] };
+        try {
+            await setDoc(doc(usersCollectionRef, matricula), newAlunoUser);
+            // console.log("Aluno user added to Firestore.");
+            closeAddAlunoUserModal();
+            alert('Usuário de aluno adicionado com sucesso!');
+        } catch (error) {
+            console.error("Error adding aluno user to Firestore:", error);
+            alert("Erro ao adicionar usuário de aluno. Tente novamente.");
+        }
     }
     function closeAddAlunoUserModal() { document.getElementById('addAlunoUserModal').classList.add('hidden'); document.getElementById('newAlunoNameInput').value = ''; document.getElementById('newAlunoMatriculaInput').value = ''; document.getElementById('newAlunoSenhaInput').value = ''; document.getElementById('newAlunoTurmaSelect').value = ''; }
 
-    // MODIFICADA: printMyBulletin para usar seleções do aluno
     function printMyBulletin() {
         if (!currentUser || currentUser.role !== 'aluno') {
             alert('Esta função está disponível apenas para usuários aluno logados.');
@@ -2899,9 +2872,7 @@
             return;
         }
 
-        // Pegar unidades selecionadas pelo aluno
         const selectedUnits = Array.from(document.querySelectorAll('#studentPrintOptions .studentUnitCheckboxPrint:checked')).map(cb => parseInt(cb.value));
-        // Pegar tipo de relatório selecionado pelo aluno
         const reportType = document.querySelector('#studentPrintOptions input[name="studentReportType"]:checked').value;
 
         if (selectedUnits.length === 0) {
@@ -2909,11 +2880,11 @@
             return;
         }
 
-        const bulletinHTML = generateBulletinHTML(student, selectedUnits, reportType, true); // Pass true to include notes
+        const bulletinHTML = generateBulletinHTML(student, selectedUnits, reportType, true);
         openPrintWindow(bulletinHTML, `Boletim de ${student.name}`);
     }
 
-    // NEW: Functions for Professor Notes Section
+    // Professor Notes Section Functions (Updated for Firestore)
 
     function populateProfessorNotesControls() {
         const notesDisciplineSelect = document.getElementById('notesDisciplineSelect');
@@ -2992,7 +2963,7 @@
                 studentsInClass.sort((a, b) => a.name.localeCompare(b.name)).forEach(student => {
                     const option = document.createElement('option');
                     option.value = student.id;
-                    option.textContent = `${student.name} (${student.matricula})`; // Display matricula in notes student select
+                    option.textContent = `${student.name} (${student.matricula})`;
                     notesStudentSelect.appendChild(option);
                 });
                 notesStudentSelect.disabled = false;
@@ -3020,7 +2991,7 @@
         if (student && student.professorNotes) {
             const relevantNotes = student.professorNotes.filter(note =>
                 note.discipline === discipline && note.unit === unit
-            ).sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort by date descending
+            ).sort((a, b) => new Date(b.date) - new Date(a.date));
 
             if (relevantNotes.length > 0) {
                 relevantNotes.forEach((note, index) => {
@@ -3033,7 +3004,7 @@
                     `;
                     existingNotesDiv.appendChild(noteItem);
                 });
-                attachDeleteNoteButtonListeners(); // Attach listeners for newly rendered buttons
+                attachDeleteNoteButtonListeners();
             } else {
                 existingNotesDiv.innerHTML = '<p class="no-notes" style="text-align: center; font-style: italic;">Nenhuma anotação existente para esta seleção.</p>';
             }
@@ -3042,7 +3013,7 @@
         }
     }
 
-    function saveProfessorNote() {
+    async function saveProfessorNote() {
         const notesStudentSelect = document.getElementById('notesStudentSelect');
         const notesDisciplineSelect = document.getElementById('notesDisciplineSelect');
         const notesUnitSelect = document.getElementById('notesUnitSelect');
@@ -3064,29 +3035,44 @@
                 professorName: currentUser.name,
                 discipline: discipline,
                 unit: unit,
-                date: new Date().toISOString(), // ISO string for easy storage and parsing
+                date: new Date().toISOString(),
                 content: content
             };
-            student.professorNotes.push(newNote);
-            saveData();
-            professorNoteContent.value = ''; // Clear textarea
-            loadProfessorStudentNotes(); // Reload notes display
-            if (currentUser.role === 'aluno' && currentUser.studentId === student.id) showStudentBulletin(); // Update student view if it's their bulletin
-            alert('Anotação salva com sucesso!');
+            student.professorNotes.push(newNote); // Update local array
+
+            try {
+                // Update the student document in Firestore with the new notes array
+                await updateDoc(doc(studentsCollectionRef, student.id), {
+                    professorNotes: student.professorNotes
+                });
+                // console.log("Professor note saved to Firestore.");
+                professorNoteContent.value = '';
+                // No need to manually load, onSnapshot will trigger loadProfessorStudentNotes
+                alert('Anotação salva com sucesso!');
+            } catch (error) {
+                console.error("Error saving professor note to Firestore:", error);
+                alert("Erro ao salvar anotação. Tente novamente.");
+            }
         } else {
             alert('Aluno não encontrado para salvar anotação.');
         }
     }
 
-    function deleteProfessorNote(studentId, noteIndex) {
+    async function deleteProfessorNote(studentId, noteIndex) {
         const student = students.find(s => s.id === studentId);
         if (student && student.professorNotes && student.professorNotes.length > noteIndex) {
             if (confirm('Tem certeza que deseja excluir esta anotação?')) {
-                student.professorNotes.splice(noteIndex, 1);
-                saveData();
-                loadProfessorStudentNotes(); // Reload notes display
-                if (currentUser.role === 'aluno' && currentUser.studentId === student.id) showStudentBulletin(); // Update student view if it's their bulletin
-                alert('Anotação excluída.');
+                const updatedNotes = student.professorNotes.filter((_, idx) => idx !== noteIndex);
+                try {
+                    await updateDoc(doc(studentsCollectionRef, student.id), {
+                        professorNotes: updatedNotes
+                    });
+                    // console.log("Professor note deleted from Firestore.");
+                    alert('Anotação excluída.');
+                } catch (error) {
+                    console.error("Error deleting professor note from Firestore:", error);
+                    alert("Erro ao excluir anotação. Tente novamente.");
+                }
             }
         } else {
             alert('Erro: Anotação não encontrada.');
@@ -3095,7 +3081,7 @@
 
     function attachDeleteNoteButtonListeners() {
         document.querySelectorAll('.professor-note-item .delete-note-button').forEach(button => {
-            button.removeEventListener('click', handleDeleteNoteClick); // Prevent multiple listeners
+            button.removeEventListener('click', handleDeleteNoteClick);
             button.addEventListener('click', handleDeleteNoteClick);
         });
     }
@@ -3106,17 +3092,15 @@
         deleteProfessorNote(studentId, noteIndex);
     }
 
-    // NEW: Function to display notes for the student in their bulletin
     function displayStudentNotes(student) {
         const studentNotesContent = document.getElementById('studentNotesContent');
-        studentNotesContent.innerHTML = ''; // Clear existing content
+        studentNotesContent.innerHTML = '';
 
         if (!student || !student.professorNotes || student.professorNotes.length === 0) {
             studentNotesContent.innerHTML = '<p class="no-notes">Nenhuma anotação disponível.</p>';
             return;
         }
 
-        // Sort notes by date (descending), then discipline, then professor
         const sortedNotes = student.professorNotes.slice().sort((a, b) => {
             const dateA = new Date(a.date);
             const dateB = new Date(b.date);
